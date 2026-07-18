@@ -1,0 +1,1369 @@
+import { useState, useEffect } from 'react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
+import {
+  LayoutDashboard,
+  Package,
+  TrendingUp,
+  Coins,
+  AlertTriangle,
+  Search,
+  Filter,
+  Plus,
+  Edit3,
+  Trash2,
+  ShoppingCart,
+  RefreshCw,
+  X,
+  CheckCircle,
+  Database,
+  ArrowUpRight,
+  Info,
+  FileSpreadsheet,
+  Upload,
+  Download
+} from 'lucide-react';
+
+// Types
+interface Equipment {
+  id: string;
+  name: string;
+  category: string;
+  current_stock: number;
+  min_stock_threshold: number;
+  cost_price: number;
+  selling_price: number;
+  created_at: string;
+}
+
+interface DashboardMetrics {
+  total_investment: number;
+  potential_revenue: number;
+  potential_profit: number;
+  low_stock_count: number;
+  low_stock_alerts: Equipment[];
+  total_unique_items: number;
+  total_stock_count: number;
+}
+
+const CATEGORIES = ['Bats', 'Balls', 'Gloves', 'Pads', 'Helmets', 'Accessories', 'Bags', 'Clothing'];
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+export default function App() {
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory'>('dashboard');
+
+  // Data States
+  const [inventory, setInventory] = useState<Equipment[]>([]);
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    total_investment: 0,
+    potential_revenue: 0,
+    potential_profit: 0,
+    low_stock_count: 0,
+    low_stock_alerts: [],
+    total_unique_items: 0,
+    total_stock_count: 0
+  });
+
+  // UX States
+  const [loading, setLoading] = useState<boolean>(true);
+  const [dbConnected, setDbConnected] = useState<boolean>(true);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Filters State
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [showLowStockOnly, setShowLowStockOnly] = useState<boolean>(false);
+
+  // Custom categories (user-added during this session)
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const allCategories = [...CATEGORIES, ...customCategories];
+
+  // Helper to register a new category if it's not already in the list
+  const registerCategory = (cat: string) => {
+    const trimmed = cat.trim();
+    if (trimmed && !allCategories.includes(trimmed)) {
+      setCustomCategories(prev => [...prev, trimmed]);
+    }
+  };
+
+  // Modal States
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [isSellModalOpen, setIsSellModalOpen] = useState<boolean>(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [selectedItem, setSelectedItem] = useState<Equipment | null>(null);
+
+  // Import Excel state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState<boolean>(false);
+  const [importResult, setImportResult] = useState<{
+    imported_count: number;
+    updated_count: number;
+    errors: string[];
+  } | null>(null);
+
+  // Form States
+  const [formData, setFormData] = useState({
+    name: '',
+    category: 'Bats',
+    current_stock: 10,
+    min_stock_threshold: 5,
+    cost_price: 50.0,
+    selling_price: 90.0
+  });
+
+  const [sellData, setSellData] = useState({
+    quantity_sold: 1,
+    sale_price: 0
+  });
+
+  // Fetch initial data
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [invRes, metricsRes] = await Promise.all([
+        fetch(`${API_URL}/inventory`),
+        fetch(`${API_URL}/dashboard/metrics`)
+      ]);
+
+      if (!invRes.ok || !metricsRes.ok) {
+        throw new Error('API request failed');
+      }
+
+      const invData = await invRes.json();
+      const metData = await metricsRes.json();
+
+      setInventory(invData);
+      setMetrics(metData);
+      setDbConnected(true);
+    } catch (error) {
+      console.error('Error fetching data from API:', error);
+      setDbConnected(false);
+      showNotification('error', 'Failed to connect to backend server. Ensure FastAPI is running.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
+  // CRUD Operations
+  const handleAddEquipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/inventory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add item');
+      }
+
+      showNotification('success', `Successfully added ${formData.name} to inventory!`);
+      registerCategory(formData.category);
+      setIsAddModalOpen(false);
+      // Reset form
+      setFormData({
+        name: '',
+        category: 'Bats',
+        current_stock: 10,
+        min_stock_threshold: 5,
+        cost_price: 50.0,
+        selling_price: 90.0
+      });
+      fetchData();
+    } catch (error) {
+      showNotification('error', 'Error adding item to inventory.');
+    }
+  };
+
+  const handleEditEquipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) return;
+
+    try {
+      const response = await fetch(`${API_URL}/inventory/${selectedItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update item');
+      }
+
+      showNotification('success', `Successfully updated ${formData.name}!`);
+      registerCategory(formData.category);
+      setIsEditModalOpen(false);
+      setSelectedItem(null);
+      fetchData();
+    } catch (error) {
+      showNotification('error', 'Error updating inventory item.');
+    }
+  };
+
+  const handleDeleteEquipment = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${name} from inventory?`)) return;
+
+    try {
+      const response = await fetch(`${API_URL}/inventory/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete item');
+      }
+
+      showNotification('success', `Removed ${name} from catalog.`);
+      fetchData();
+    } catch (error) {
+      showNotification('error', 'Error deleting item.');
+    }
+  };
+
+  const handleLogSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) return;
+
+    try {
+      const response = await fetch(`${API_URL}/sales`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipment_id: selectedItem.id,
+          quantity_sold: sellData.quantity_sold,
+          sale_price: sellData.sale_price
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to log sale');
+      }
+
+      const profit = (sellData.sale_price - selectedItem.cost_price) * sellData.quantity_sold;
+      showNotification('success', `Logged sale of ${sellData.quantity_sold}x ${selectedItem.name}! Actual profit generated: ₹${profit.toFixed(2)}`);
+      setIsSellModalOpen(false);
+      setSelectedItem(null);
+      fetchData();
+    } catch (error: any) {
+      showNotification('error', error.message || 'Error logging sale.');
+    }
+  };
+
+  // Open Modals helper
+  const openEditModal = (item: Equipment) => {
+    setSelectedItem(item);
+    setFormData({
+      name: item.name,
+      category: item.category,
+      current_stock: item.current_stock,
+      min_stock_threshold: item.min_stock_threshold,
+      cost_price: item.cost_price,
+      selling_price: item.selling_price
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const openSellModal = (item: Equipment) => {
+    setSelectedItem(item);
+    setSellData({
+      quantity_sold: 1,
+      sale_price: item.selling_price
+    });
+    setIsSellModalOpen(true);
+  };
+
+  // Excel Export
+  const handleExportExcel = async () => {
+    try {
+      const response = await fetch(`${API_URL}/inventory/export`);
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'inventory_catalog.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showNotification('success', 'Inventory catalog exported successfully!');
+    } catch (error) {
+      showNotification('error', 'Failed to export inventory catalog.');
+    }
+  };
+
+  // Excel Import
+  const handleImportExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      const response = await fetch(`${API_URL}/inventory/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Import failed');
+      setImportResult(data);
+      fetchData();
+    } catch (error: any) {
+      showNotification('error', error.message || 'Failed to import Excel file.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const closeImportModal = () => {
+    setIsImportModalOpen(false);
+    setImportFile(null);
+    setImportResult(null);
+  };
+
+
+
+  // Filter Logic
+  const filteredInventory = inventory.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.category.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+    const matchesLowStock = !showLowStockOnly || item.current_stock <= item.min_stock_threshold;
+    return matchesSearch && matchesCategory && matchesLowStock;
+  });
+
+  // Chart Data compilation (Category grouping)
+  const chartData = CATEGORIES.map(category => {
+    const categoryItems = inventory.filter(item => item.category === category);
+    const totalCost = categoryItems.reduce((acc, curr) => acc + (curr.current_stock * curr.cost_price), 0);
+    const totalRevenue = categoryItems.reduce((acc, curr) => acc + (curr.current_stock * curr.selling_price), 0);
+    const potentialProfit = totalRevenue - totalCost;
+
+    return {
+      name: category,
+      'Stock Value (₹)': Math.round(totalCost),
+      'Potential Profit (₹)': Math.round(potentialProfit)
+    };
+  }).filter(data => data['Stock Value (₹)'] > 0 || data['Potential Profit (₹)'] > 0);
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-cricket-cream">
+      {/* Toast Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-xl shadow-premium border transition-all duration-300 transform translate-y-0 ${notification.type === 'success'
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}>
+          <div className="mr-3">
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+            )}
+          </div>
+          <p className="text-sm font-medium">{notification.message}</p>
+          <button onClick={() => setNotification(null)} className="ml-4 hover:opacity-75">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Sidebar Navigation */}
+      <aside className="w-64 bg-cricket-pitch text-white flex flex-col justify-between border-r border-cricket-forest shadow-premium">
+        <div>
+          {/* Brand Header */}
+          <div className="p-6 border-b border-cricket-forest flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cricket-gold flex items-center justify-center shadow-lg">
+              <span className="text-cricket-pitch font-bold text-xl">🏏</span>
+            </div>
+            <div>
+              <h1 className="font-extrabold text-lg tracking-tight text-white m-0 leading-tight">CRIC-STOCK</h1>
+              <p className="text-[10px] text-cricket-goldlight font-medium uppercase tracking-wider">Maintenance Engine</p>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="p-4 space-y-1">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'dashboard'
+                ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
+                : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
+                }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('inventory')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'inventory'
+                ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
+                : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
+                }`}
+            >
+              <Package className="w-4 h-4" />
+              Inventory Catalog
+            </button>
+          </nav>
+        </div>
+
+        {/* Database Connection Status Block */}
+        <div className="p-4 border-t border-cricket-forest">
+          <div className={`p-3 rounded-lg flex items-center gap-3 ${dbConnected ? 'bg-emerald-950/40 border border-emerald-900/60' : 'bg-rose-950/40 border border-rose-900/60'
+            }`}>
+            <Database className={`w-4 h-4 ${dbConnected ? 'text-emerald-400' : 'text-rose-400'}`} />
+            <div>
+              <p className="text-xs font-semibold text-slate-300">Supabase Connection</p>
+              <p className={`text-[10px] font-bold uppercase ${dbConnected ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {dbConnected ? 'Active / Online' : 'Disconnected'}
+              </p>
+            </div>
+            {loading && <RefreshCw className="w-3 h-3 text-slate-400 animate-spin ml-auto" />}
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto p-8 bg-cricket-cream">
+        {/* Top Header */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          <div>
+            <h2 className="text-3xl font-extrabold text-cricket-pitch m-0 tracking-tight">
+              {activeTab === 'dashboard' ? 'Dashboard Overview' : 'Inventory Catalog'}
+            </h2>
+            <p className="text-slate-500 text-sm">
+              {activeTab === 'dashboard'
+                ? 'High-level financial summaries and active category allocations.'
+                : 'Search, filter, update or register items in the cricket stock database.'
+              }
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="p-2.5 rounded-xl border border-cricket-border bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+              title="Refresh Data"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            {activeTab === 'inventory' && (
+              <>
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-sm font-semibold"
+                  title="Export inventory as Excel file"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Excel
+                </button>
+                <button
+                  onClick={() => { setIsImportModalOpen(true); setImportResult(null); setImportFile(null); }}
+                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-sm font-semibold"
+                  title="Import inventory from Excel file"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import Excel
+                </button>
+                <button
+                  onClick={() => {
+                    setFormData({
+                      name: '',
+                      category: 'Bats',
+                      current_stock: 10,
+                      min_stock_threshold: 5,
+                      cost_price: 50.0,
+                      selling_price: 90.0
+                    });
+                    setIsAddModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 bg-cricket-grass text-white px-5 py-2.5 rounded-xl hover:bg-cricket-forest transition-colors shadow-md text-sm font-semibold"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Equipment
+                </button>
+              </>
+            )}
+          </div>
+
+        </header>
+
+        {/* LOADING INDICATOR */}
+        {loading && inventory.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-96">
+            <div className="w-12 h-12 border-4 border-cricket-grass border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-500 mt-4 font-semibold text-sm">Syncing with stock register...</p>
+          </div>
+        ) : (
+          <>
+            {/* VIEW 1: DASHBOARD VIEW */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-8 animate-fadeIn">
+                {/* Metric Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {/* Metric 1 */}
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Stock Value</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
+                        ₹{metrics.total_investment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Valued at aggregate cost prices</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 text-cricket-grass rounded-xl">
+                      <Coins className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  {/* Metric 2 */}
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-cricket-gold">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Projected Profit</span>
+                      <h3 className="text-2xl font-black text-cricket-gold mt-2">
+                        ₹{metrics.potential_profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">If all items are sold at selling price</p>
+                    </div>
+                    <div className="p-3 bg-amber-50 text-cricket-gold rounded-xl">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  {/* Metric 3 */}
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Active Catalog items</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{metrics.total_unique_items}</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">
+                        Total items in stock: <span className="font-bold">{metrics.total_stock_count} units</span>
+                      </p>
+                    </div>
+                    <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
+                      <Package className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  {/* Metric 4 - Low Stock Card */}
+                  <div className={`p-6 rounded-2xl border shadow-premium flex justify-between items-start transition-all ${metrics.low_stock_count > 0
+                    ? 'bg-rose-50 border-rose-200 border-b-4 border-b-rose-500 animate-pulse'
+                    : 'bg-white border-cricket-border'
+                    }`}>
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Low Stock Alerts</span>
+                      <h3 className={`text-2xl font-black mt-2 ${metrics.low_stock_count > 0 ? 'text-rose-600' : 'text-cricket-pitch'}`}>
+                        {metrics.low_stock_count}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Items at or below thresholds</p>
+                    </div>
+                    <div className={`p-3 rounded-xl ${metrics.low_stock_count > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dashboard Secondary Layout: Chart & Low Stock Alerts */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Recharts Allocation */}
+                  <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-cricket-border shadow-premium">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <h4 className="text-lg font-bold text-cricket-pitch m-0">Category Breakdown</h4>
+                        <p className="text-xs text-slate-500">Stock Asset Valuation vs. Potential Profits</p>
+                      </div>
+                    </div>
+                    <div className="h-80 w-full">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                            <XAxis dataKey="name" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                            <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              contentStyle={{ background: '#0A251C', border: 'none', borderRadius: '12px', color: '#fff' }}
+                              labelStyle={{ fontWeight: 'bold', color: '#C5A85A' }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                            <Bar dataKey="Stock Value (₹)" fill="#1A5C45" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="Potential Profit (₹)" fill="#C5A85A" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                          <Package className="w-10 h-10 mb-2 stroke-[1.5]" />
+                          <p className="text-sm font-semibold">No equipment registered yet. Go to Inventory tab to add items.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Low Stock Alert details */}
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex flex-col">
+                    <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
+                      <div>
+                        <h4 className="text-lg font-bold text-cricket-pitch m-0">Action Items</h4>
+                        <p className="text-xs text-slate-500">Replenish stock list immediately</p>
+                      </div>
+                      <span className="bg-rose-100 text-rose-700 text-xs px-2.5 py-1 rounded-full font-bold">
+                        {metrics.low_stock_count} Alert(s)
+                      </span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-3 max-h-[280px]">
+                      {metrics.low_stock_alerts && metrics.low_stock_alerts.length > 0 ? (
+                        metrics.low_stock_alerts.map(item => (
+                          <div key={item.id} className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{item.name}</p>
+                              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{item.category}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs font-bold text-rose-600 block bg-rose-100/80 px-2 py-0.5 rounded-md">
+                                Stock: {item.current_stock} / {item.min_stock_threshold}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full py-12 text-slate-400">
+                          <CheckCircle className="w-8 h-8 text-emerald-500 mb-2" />
+                          <p className="text-sm font-semibold text-center">All stocks are above minimum thresholds.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 2: INVENTORY VIEW */}
+            {activeTab === 'inventory' && (
+              <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden animate-fadeIn">
+                {/* Search / Filters Panel */}
+                <div className="p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  {/* Search box */}
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search items by name or category..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-cricket-border rounded-xl focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass text-sm bg-white"
+                    />
+                  </div>
+
+                  {/* Filter Toolbar options */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Category Selector */}
+                    <div className="flex items-center gap-2">
+                      <Filter className="w-3.5 h-3.5 text-slate-400" />
+                      <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                      >
+                        <option value="All">All Categories</option>
+                        {allCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Low Stock Toggle checkbox */}
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-3.5 py-2 border border-cricket-border rounded-xl hover:bg-slate-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={showLowStockOnly}
+                        onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                        className="rounded border-slate-300 text-cricket-grass focus:ring-cricket-grass/40 w-3.5 h-3.5"
+                      />
+                      <span className="text-xs font-bold text-slate-600">Show Low Stock Only</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Table list */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-cricket-border">
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Item Name</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Stock Level</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Cost Price</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Selling Price</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Potential profit/unit</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Total potential profit</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Date Arrived</th>
+                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredInventory.length > 0 ? (
+                        filteredInventory.map(item => {
+                          const isLowStock = item.current_stock <= item.min_stock_threshold;
+                          const profitPerUnit = item.selling_price - item.cost_price;
+                          const totalPotentialProfit = profitPerUnit * item.current_stock;
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                              {/* Item Name */}
+                              <td className="px-6 py-4">
+                                <div className="font-bold text-slate-800">{item.name}</div>
+                              </td>
+
+                              {/* Category */}
+                              <td className="px-6 py-4">
+                                <span className="inline-block px-2.5 py-1 text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
+                                  {item.category}
+                                </span>
+                              </td>
+
+                              {/* Stock Level */}
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className={`text-sm font-extrabold ${isLowStock ? 'text-rose-600' : 'text-slate-800'}`}>
+                                    {item.current_stock}
+                                  </span>
+                                  <span className="text-slate-400 text-[10px] font-semibold">/ {item.min_stock_threshold} min</span>
+                                  {isLowStock && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" title="Low stock alert" />
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Cost Price */}
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-semibold text-slate-700">₹{Number(item.cost_price).toFixed(2)}</span>
+                              </td>
+
+                              {/* Selling Price */}
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-semibold text-slate-700">₹{Number(item.selling_price).toFixed(2)}</span>
+                              </td>
+
+                              {/* Unit Profit */}
+                              <td className="px-6 py-4">
+                                <span className={`text-sm font-bold ${profitPerUnit > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                  ₹{profitPerUnit.toFixed(2)}
+                                </span>
+                              </td>
+
+                              {/* Total Profit */}
+                              <td className="px-6 py-4">
+                                <span className={`text-sm font-black ${totalPotentialProfit > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                  ₹{totalPotentialProfit.toFixed(2)}
+                                </span>
+                              </td>
+
+                              {/* Date Arrived */}
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold text-slate-700">
+                                    {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                    {new Date(item.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  {/* Quick Sell Button */}
+                                  <button
+                                    onClick={() => openSellModal(item)}
+                                    disabled={item.current_stock === 0}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors ${item.current_stock === 0
+                                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
+                                      : 'bg-cricket-gold text-cricket-pitch hover:bg-cricket-accent'
+                                      }`}
+                                    title={item.current_stock === 0 ? "Out of stock" : "Log a Sale"}
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                    Sell
+                                  </button>
+
+                                  {/* Edit Button */}
+                                  <button
+                                    onClick={() => openEditModal(item)}
+                                    className="p-1.5 text-slate-500 hover:text-cricket-grass hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                    title="Edit Details"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    onClick={() => handleDeleteEquipment(item.id, item.name)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Delete Equipment"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={9} className="text-center py-12 text-slate-400">
+                            <Info className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p className="text-sm font-semibold">No equipment found matching filters.</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* MODAL 1: ADD NEW EQUIPMENT */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-base m-0 text-white">Add New Equipment</h3>
+                <p className="text-[10px] text-cricket-goldlight mt-0.5">Register new batch in the database catalog</p>
+              </div>
+              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddEquipment} className="p-6 space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Equipment Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Gray-Nicolls Legend Bat"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Category
+                    <span className="ml-1 normal-case font-normal text-slate-400">(or type new)</span>
+                  </label>
+                  <input
+                    type="text"
+                    list="add-category-options"
+                    required
+                    placeholder="Select or type a category..."
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass bg-white"
+                  />
+                  <datalist id="add-category-options">
+                    {allCategories.map(cat => (
+                      <option key={cat} value={cat} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Min stock threshold */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Min Threshold</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formData.min_stock_threshold}
+                    onChange={(e) => setFormData({ ...formData, min_stock_threshold: parseInt(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {/* Current Stock */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formData.current_stock}
+                    onChange={(e) => setFormData({ ...formData, current_stock: parseInt(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+
+                {/* Cost Price */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formData.cost_price}
+                    onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+
+                {/* Selling Price */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formData.selling_price}
+                    onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+              </div>
+
+              {/* Potential unit profit helper info */}
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-2">
+                <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-semibold text-emerald-800">
+                  Potential profit per unit: ${(formData.selling_price - formData.cost_price).toFixed(2)}
+                </span>
+              </div>
+
+              {/* Form buttons */}
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                >
+                  Add Equipment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: EDIT EQUIPMENT */}
+      {isEditModalOpen && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-base m-0 text-white">Update Equipment</h3>
+                <p className="text-[10px] text-cricket-goldlight mt-0.5">Edit attributes of {selectedItem.name}</p>
+              </div>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditEquipment} className="p-6 space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Equipment Name</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Category
+                    <span className="ml-1 normal-case font-normal text-slate-400">(or type new)</span>
+                  </label>
+                  <input
+                    type="text"
+                    list="edit-category-options"
+                    required
+                    placeholder="Select or type a category..."
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass bg-white"
+                  />
+                  <datalist id="edit-category-options">
+                    {allCategories.map(cat => (
+                      <option key={cat} value={cat} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Min stock threshold */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Min Threshold</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formData.min_stock_threshold}
+                    onChange={(e) => setFormData({ ...formData, min_stock_threshold: parseInt(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {/* Current Stock */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Stock Level</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formData.current_stock}
+                    onChange={(e) => setFormData({ ...formData, current_stock: parseInt(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+
+                {/* Cost Price */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price (₹)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formData.cost_price}
+                    onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+
+                {/* Selling Price */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling (₹)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formData.selling_price}
+                    onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                  />
+                </div>
+              </div>
+
+              {/* Form buttons */}
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: QUICK SELL (LOG A SALE) */}
+      {isSellModalOpen && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-base m-0 text-white">Log Cricket Equipment Sale</h3>
+                <p className="text-[10px] text-cricket-goldlight mt-0.5">Record customer purchase details</p>
+              </div>
+              <button onClick={() => setIsSellModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleLogSale} className="p-6 space-y-4">
+              {/* Product Info Summary */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Product</p>
+                <h4 className="text-base font-bold text-slate-800 mt-1">{selectedItem.name}</h4>
+                <div className="flex gap-4 mt-2 text-xs font-semibold text-slate-500">
+                  <span>Available Stock: <strong className="text-slate-800">{selectedItem.current_stock} units</strong></span>
+                  <span>Unit Cost: <strong className="text-slate-800">${selectedItem.cost_price}</strong></span>
+                </div>
+              </div>
+
+              {/* Quantity Sold */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Quantity Sold</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedItem.current_stock}
+                  required
+                  value={sellData.quantity_sold}
+                  onChange={(e) => setSellData({ ...sellData, quantity_sold: Math.min(selectedItem.current_stock, parseInt(e.target.value) || 1) })}
+                  className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">Cannot exceed current stock level of {selectedItem.current_stock}.</p>
+              </div>
+
+              {/* Sale Price */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sale Price per unit ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={sellData.sale_price}
+                  onChange={(e) => setSellData({ ...sellData, sale_price: parseFloat(e.target.value) || 0 })}
+                  className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                />
+              </div>
+
+              {/* Dynamic calculations breakdown */}
+              {(() => {
+                const totalRevenue = sellData.quantity_sold * sellData.sale_price;
+                const totalCost = sellData.quantity_sold * selectedItem.cost_price;
+                const actualProfit = totalRevenue - totalCost;
+
+                return (
+                  <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-1.5 text-xs font-semibold">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total Revenue:</span>
+                      <span>${totalRevenue.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Cost of Goods Sold (COGS):</span>
+                      <span>${totalCost.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-base font-black border-t border-emerald-100 pt-1.5 mt-1.5 text-emerald-800">
+                      <span>Actual Profit:</span>
+                      <span>${actualProfit.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsSellModalOpen(false)}
+                  className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-cricket-gold hover:bg-cricket-accent text-cricket-pitch rounded-xl text-xs font-bold shadow-md transition-colors"
+                >
+                  Confirm Sale
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: IMPORT EXCEL */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full overflow-hidden animate-scaleIn">
+            {/* Modal Header */}
+            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cricket-gold/20 rounded-lg">
+                  <FileSpreadsheet className="w-5 h-5 text-cricket-gold" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base m-0 text-white">Import from Excel</h3>
+                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload or update inventory via .xlsx file</p>
+                </div>
+              </div>
+              <button onClick={closeImportModal} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Required columns info */}
+              <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
+                <p className="text-xs font-bold text-sky-800 uppercase tracking-wider mb-2">Required Column Headers</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['name', 'category', 'current_stock', 'cost_price', 'selling_price'].map(col => (
+                    <code key={col} className="text-[11px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-md font-mono font-semibold">{col}</code>
+                  ))}
+                </div>
+                <p className="text-[10px] text-sky-600 mt-2 font-medium">
+                  Optional: <code className="font-mono">min_stock_threshold</code> — defaults to 5 if omitted.<br />
+                  Existing items (matched by name) will be <strong>updated</strong>; new ones will be <strong>inserted</strong>.
+                </p>
+              </div>
+
+              {/* File Upload Form */}
+              {!importResult ? (
+                <form onSubmit={handleImportExcel} className="space-y-4">
+                  {/* Drop Zone */}
+                  <label
+                    htmlFor="excel-upload"
+                    className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${importFile
+                      ? 'border-cricket-grass bg-emerald-50'
+                      : 'border-slate-300 bg-slate-50 hover:border-cricket-grass hover:bg-emerald-50/40'
+                      }`}
+                  >
+                    {importFile ? (
+                      <>
+                        <FileSpreadsheet className="w-8 h-8 text-cricket-grass mb-2" />
+                        <p className="text-sm font-bold text-cricket-grass">{importFile.name}</p>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          {(importFile.size / 1024).toFixed(1)} KB — click to change
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                        <p className="text-sm font-semibold text-slate-600">Click to upload or drag & drop</p>
+                        <p className="text-[10px] text-slate-400 mt-1">.xlsx or .xls files only</p>
+                      </>
+                    )}
+                    <input
+                      id="excel-upload"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+
+                  <div className="flex gap-2 justify-end pt-1 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={closeImportModal}
+                      className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!importFile || importLoading}
+                      className="flex items-center gap-2 px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {importLoading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          Import File
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Results Panel */
+                <div className="space-y-4">
+                  {/* Summary row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
+                      <p className="text-2xl font-black text-emerald-700">{importResult.imported_count}</p>
+                      <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">New Items Added</p>
+                    </div>
+                    <div className="p-3 bg-sky-50 rounded-xl border border-sky-100 text-center">
+                      <p className="text-2xl font-black text-sky-700">{importResult.updated_count}</p>
+                      <p className="text-[10px] font-bold text-sky-600 uppercase tracking-wider mt-0.5">Items Updated</p>
+                    </div>
+                  </div>
+
+                  {/* Errors */}
+                  {importResult.errors.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-rose-50 rounded-xl border border-rose-100">
+                      <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-2">
+                        {importResult.errors.length} Row Error(s)
+                      </p>
+                      {importResult.errors.map((err, i) => (
+                        <p key={i} className="text-xs text-rose-700 font-medium">{err}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {importResult.errors.length === 0 && (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <p className="text-xs font-semibold text-emerald-800">All rows imported successfully with no errors!</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-1 border-t border-slate-100">
+                    <button
+                      onClick={() => { setImportFile(null); setImportResult(null); }}
+                      className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                    >
+                      Import Another
+                    </button>
+                    <button
+                      onClick={closeImportModal}
+                      className="px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
