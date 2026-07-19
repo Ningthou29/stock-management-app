@@ -29,7 +29,8 @@ import {
   Info,
   FileSpreadsheet,
   Upload,
-  Download
+  Download,
+  Receipt
 } from 'lucide-react';
 
 // Types
@@ -42,6 +43,19 @@ interface Equipment {
   cost_price: number;
   selling_price: number;
   created_at: string;
+}
+
+interface SalesRecord {
+  id: string;
+  equipment_id: string;
+  equipment_name: string;
+  category: string;
+  quantity_sold: number;
+  sale_price: number;
+  total_revenue: number;
+  profit: number;
+  created_at: string;
+  stock_arrival_date: string;
 }
 
 interface DashboardMetrics {
@@ -59,10 +73,11 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'sales'>('dashboard');
 
   // Data States
   const [inventory, setInventory] = useState<Equipment[]>([]);
+  const [salesRecords, setSalesRecords] = useState<SalesRecord[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     total_investment: 0,
     potential_revenue: 0,
@@ -83,6 +98,14 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showLowStockOnly, setShowLowStockOnly] = useState<boolean>(false);
 
+  // Sales Filters
+  const [salesSearchQuery, setSalesSearchQuery] = useState<string>('');
+  const [salesCategoryFilter, setSalesCategoryFilter] = useState<string>('All');
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: ''
+  });
+
   // Custom categories (user-added during this session)
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const allCategories = [...CATEGORIES, ...customCategories];
@@ -90,8 +113,13 @@ export default function App() {
   // Helper to register a new category if it's not already in the list
   const registerCategory = (cat: string) => {
     const trimmed = cat.trim();
-    if (trimmed && !allCategories.includes(trimmed)) {
-      setCustomCategories(prev => [...prev, trimmed]);
+    if (trimmed) {
+      // Check if it already exists in the current categories
+      const exists = CATEGORIES.some(c => c === trimmed) ||
+        customCategories.some(c => c === trimmed);
+      if (!exists) {
+        setCustomCategories(prev => [...prev, trimmed]);
+      }
     }
   };
 
@@ -100,6 +128,7 @@ export default function App() {
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [isSalesImportModalOpen, setIsSalesImportModalOpen] = useState<boolean>(false);
   const [selectedItem, setSelectedItem] = useState<Equipment | null>(null);
 
   // Import Excel state
@@ -108,6 +137,14 @@ export default function App() {
   const [importResult, setImportResult] = useState<{
     imported_count: number;
     updated_count: number;
+    errors: string[];
+  } | null>(null);
+
+  // Sales Import state
+  const [salesImportFile, setSalesImportFile] = useState<File | null>(null);
+  const [salesImportLoading, setSalesImportLoading] = useState<boolean>(false);
+  const [salesImportResult, setSalesImportResult] = useState<{
+    imported_count: number;
     errors: string[];
   } | null>(null);
 
@@ -130,20 +167,23 @@ export default function App() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [invRes, metricsRes] = await Promise.all([
+      const [invRes, metricsRes, salesRes] = await Promise.all([
         fetch(`${API_URL}/inventory`),
-        fetch(`${API_URL}/dashboard/metrics`)
+        fetch(`${API_URL}/dashboard/metrics`),
+        fetch(`${API_URL}/sales`)
       ]);
 
-      if (!invRes.ok || !metricsRes.ok) {
+      if (!invRes.ok || !metricsRes.ok || !salesRes.ok) {
         throw new Error('API request failed');
       }
 
       const invData = await invRes.json();
       const metData = await metricsRes.json();
+      const salesData = await salesRes.json();
 
       setInventory(invData);
       setMetrics(metData);
+      setSalesRecords(salesData);
       setDbConnected(true);
     } catch (error) {
       console.error('Error fetching data from API:', error);
@@ -169,18 +209,28 @@ export default function App() {
   const handleAddEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Ensure category is trimmed
+      const categoryToSave = formData.category.trim();
+
       const response = await fetch(`${API_URL}/inventory`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          category: categoryToSave // Use trimmed category
+        })
       });
 
       if (!response.ok) {
         throw new Error('Failed to add item');
       }
 
+      // Register the category if it's new
+      if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
+        setCustomCategories(prev => [...prev, categoryToSave]);
+      }
+
       showNotification('success', `Successfully added ${formData.name} to inventory!`);
-      registerCategory(formData.category);
       setIsAddModalOpen(false);
       // Reset form
       setFormData({
@@ -202,18 +252,28 @@ export default function App() {
     if (!selectedItem) return;
 
     try {
+      // Ensure category is trimmed
+      const categoryToSave = formData.category.trim();
+
       const response = await fetch(`${API_URL}/inventory/${selectedItem.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          category: categoryToSave // Use trimmed category
+        })
       });
 
       if (!response.ok) {
         throw new Error('Failed to update item');
       }
 
+      // Register the category if it's new
+      if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
+        setCustomCategories(prev => [...prev, categoryToSave]);
+      }
+
       showNotification('success', `Successfully updated ${formData.name}!`);
-      registerCategory(formData.category);
       setIsEditModalOpen(false);
       setSelectedItem(null);
       fetchData();
@@ -272,6 +332,27 @@ export default function App() {
     }
   };
 
+  // Delete Sales Record
+  const handleDeleteSale = async (saleId: string, equipmentName: string, quantity: number) => {
+    if (!window.confirm(`Are you sure you want to delete this sale of ${quantity}x ${equipmentName}? This will restore the stock quantity.`)) return;
+
+    try {
+      const response = await fetch(`${API_URL}/sales/${saleId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to delete sale record');
+      }
+
+      showNotification('success', `Sale of ${quantity}x ${equipmentName} has been deleted. Stock has been restored.`);
+      fetchData(); // Refresh all data
+    } catch (error: any) {
+      showNotification('error', error.message || 'Error deleting sale record.');
+    }
+  };
+
   // Open Modals helper
   const openEditModal = (item: Equipment) => {
     setSelectedItem(item);
@@ -295,8 +376,8 @@ export default function App() {
     setIsSellModalOpen(true);
   };
 
-  // Excel Export
-  const handleExportExcel = async () => {
+  // Excel Export for Inventory
+  const handleExportInventoryExcel = async () => {
     try {
       const response = await fetch(`${API_URL}/inventory/export`);
       if (!response.ok) throw new Error('Export failed');
@@ -315,8 +396,53 @@ export default function App() {
     }
   };
 
-  // Excel Import
-  const handleImportExcel = async (e: React.FormEvent) => {
+  // Excel Export for Sales Log
+  const handleExportSalesExcel = async () => {
+    try {
+      // Get filtered sales data
+      const filteredData = filteredSales.map(sale => ({
+        'Item Name': sale.equipment_name,
+        'Category': sale.category,
+        'Quantity Sold': sale.quantity_sold,
+        'Sale Price (₹)': sale.sale_price.toFixed(2),
+        'Total Revenue (₹)': sale.total_revenue.toFixed(2),
+        'Profit (₹)': sale.profit.toFixed(2),
+        'Stock Arrival Date': new Date(sale.stock_arrival_date).toLocaleDateString('en-GB'),
+        'Sale Date': new Date(sale.created_at).toLocaleDateString('en-GB'),
+        'Sale Time': new Date(sale.created_at).toLocaleTimeString('en-GB')
+      }));
+
+      if (filteredData.length === 0) {
+        showNotification('error', 'No sales data to export.');
+        return;
+      }
+
+      // Call the backend export endpoint with filtered data
+      const response = await fetch(`${API_URL}/sales/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filteredData)
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sales_log_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showNotification('success', `Sales log exported successfully! (${filteredData.length} records)`);
+    } catch (error) {
+      showNotification('error', 'Failed to export sales log.');
+    }
+  };
+
+  // Excel Import for Inventory
+  const handleImportInventoryExcel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile) return;
     setImportLoading(true);
@@ -332,10 +458,36 @@ export default function App() {
       if (!response.ok) throw new Error(data.detail || 'Import failed');
       setImportResult(data);
       fetchData();
+      showNotification('success', `Inventory imported successfully! ${data.imported_count} new items, ${data.updated_count} updated.`);
     } catch (error: any) {
       showNotification('error', error.message || 'Failed to import Excel file.');
     } finally {
       setImportLoading(false);
+    }
+  };
+
+  // Excel Import for Sales Log
+  const handleImportSalesExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salesImportFile) return;
+    setSalesImportLoading(true);
+    setSalesImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', salesImportFile);
+      const response = await fetch(`${API_URL}/sales/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Import failed');
+      setSalesImportResult(data);
+      fetchData();
+      showNotification('success', `Sales imported successfully! ${data.imported_count} records added.`);
+    } catch (error: any) {
+      showNotification('error', error.message || 'Failed to import sales Excel file.');
+    } finally {
+      setSalesImportLoading(false);
     }
   };
 
@@ -345,15 +497,34 @@ export default function App() {
     setImportResult(null);
   };
 
+  const closeSalesImportModal = () => {
+    setIsSalesImportModalOpen(false);
+    setSalesImportFile(null);
+    setSalesImportResult(null);
+  };
 
-
-  // Filter Logic
+  // Filter Logic for Inventory
   const filteredInventory = inventory.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
     const matchesLowStock = !showLowStockOnly || item.current_stock <= item.min_stock_threshold;
     return matchesSearch && matchesCategory && matchesLowStock;
+  });
+
+  // Filter Logic for Sales
+  const filteredSales = salesRecords.filter(sale => {
+    const matchesSearch = sale.equipment_name.toLowerCase().includes(salesSearchQuery.toLowerCase()) ||
+      sale.category.toLowerCase().includes(salesSearchQuery.toLowerCase());
+    const matchesCategory = salesCategoryFilter === 'All' || sale.category === salesCategoryFilter;
+    const matchesDateRange = () => {
+      if (!dateRange.start && !dateRange.end) return true;
+      const saleDate = new Date(sale.created_at);
+      const start = dateRange.start ? new Date(dateRange.start) : new Date(0);
+      const end = dateRange.end ? new Date(dateRange.end) : new Date(8640000000000000);
+      return saleDate >= start && saleDate <= end;
+    };
+    return matchesSearch && matchesCategory && matchesDateRange();
   });
 
   // Chart Data compilation (Category grouping)
@@ -369,6 +540,11 @@ export default function App() {
       'Potential Profit (₹)': Math.round(potentialProfit)
     };
   }).filter(data => data['Stock Value (₹)'] > 0 || data['Potential Profit (₹)'] > 0);
+
+  // Calculate sales summary
+  const totalSalesRevenue = salesRecords.reduce((acc, sale) => acc + sale.total_revenue, 0);
+  const totalSalesProfit = salesRecords.reduce((acc, sale) => acc + sale.profit, 0);
+  const totalItemsSold = salesRecords.reduce((acc, sale) => acc + sale.quantity_sold, 0);
 
   return (
     <div className="flex h-screen overflow-hidden bg-cricket-cream">
@@ -401,7 +577,7 @@ export default function App() {
               <span className="text-cricket-pitch font-bold text-xl">🏏</span>
             </div>
             <div>
-              <h1 className="font-extrabold text-lg tracking-tight text-white m-0 leading-tight">CRIC-STOCK</h1>
+              <h1 className="font-extrabold text-lg tracking-tight text-white m-0 leading-tight">STOCK YARD</h1>
               <p className="text-[10px] text-cricket-goldlight font-medium uppercase tracking-wider">Maintenance Engine</p>
             </div>
           </div>
@@ -428,6 +604,16 @@ export default function App() {
               <Package className="w-4 h-4" />
               Inventory Catalog
             </button>
+            <button
+              onClick={() => setActiveTab('sales')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'sales'
+                ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
+                : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
+                }`}
+            >
+              <Receipt className="w-4 h-4" />
+              Sales Log
+            </button>
           </nav>
         </div>
 
@@ -453,17 +639,21 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h2 className="text-3xl font-extrabold text-cricket-pitch m-0 tracking-tight">
-              {activeTab === 'dashboard' ? 'Dashboard Overview' : 'Inventory Catalog'}
+              {activeTab === 'dashboard' ? 'Dashboard Overview' :
+                activeTab === 'inventory' ? 'Inventory Catalog' :
+                  'Sales Log'}
             </h2>
             <p className="text-slate-500 text-sm">
               {activeTab === 'dashboard'
                 ? 'High-level financial summaries and active category allocations.'
-                : 'Search, filter, update or register items in the cricket stock database.'
+                : activeTab === 'inventory'
+                  ? 'Search, filter, update or register items in the cricket stock database.'
+                  : 'Track all sales transactions, revenue, and profits.'
               }
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={fetchData}
               disabled={loading}
@@ -475,7 +665,7 @@ export default function App() {
             {activeTab === 'inventory' && (
               <>
                 <button
-                  onClick={handleExportExcel}
+                  onClick={handleExportInventoryExcel}
                   className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-sm font-semibold"
                   title="Export inventory as Excel file"
                 >
@@ -506,6 +696,26 @@ export default function App() {
                 >
                   <Plus className="w-4 h-4" />
                   Add Equipment
+                </button>
+              </>
+            )}
+            {activeTab === 'sales' && (
+              <>
+                <button
+                  onClick={handleExportSalesExcel}
+                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-sm font-semibold"
+                  title="Export sales log as Excel file"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Excel
+                </button>
+                <button
+                  onClick={() => { setIsSalesImportModalOpen(true); setSalesImportResult(null); setSalesImportFile(null); }}
+                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-sm font-semibold"
+                  title="Import sales from Excel file"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import Excel
                 </button>
               </>
             )}
@@ -654,6 +864,46 @@ export default function App() {
                           <p className="text-sm font-semibold text-center">All stocks are above minimum thresholds.</p>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sales Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
+                        ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">From all sales transactions</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
+                      <h3 className="text-2xl font-black text-emerald-600 mt-2">
+                        ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Actual profit from sales</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                      <Coins className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{totalItemsSold}</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Across all transactions</p>
+                    </div>
+                    <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                      <ShoppingCart className="w-6 h-6" />
                     </div>
                   </div>
                 </div>
@@ -845,6 +1095,189 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* VIEW 3: SALES LOG */}
+            {activeTab === 'sales' && (
+              <div className="space-y-6 animate-fadeIn">
+                {/* Sales Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
+                        ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">From {salesRecords.length} transactions</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
+                      <h3 className="text-2xl font-black text-emerald-600 mt-2">
+                        ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Actual profit from sales</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                      <Coins className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
+                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{totalItemsSold}</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Across all categories</p>
+                    </div>
+                    <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                      <ShoppingCart className="w-6 h-6" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sales Log Table */}
+                <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden">
+                  {/* Search / Filters Panel */}
+                  <div className="p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    {/* Search box */}
+                    <div className="relative flex-1 max-w-md">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search sales by item name or category..."
+                        value={salesSearchQuery}
+                        onChange={(e) => setSalesSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-cricket-border rounded-xl focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass text-sm bg-white"
+                      />
+                    </div>
+
+                    {/* Filter Toolbar options */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Category Selector */}
+                      <div className="flex items-center gap-2">
+                        <Filter className="w-3.5 h-3.5 text-slate-400" />
+                        <select
+                          value={salesCategoryFilter}
+                          onChange={(e) => setSalesCategoryFilter(e.target.value)}
+                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                        >
+                          <option value="All">All Categories</option>
+                          {allCategories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Date Range Filters */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={dateRange.start}
+                          onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                          placeholder="Start Date"
+                        />
+                        <span className="text-slate-400 text-xs">to</span>
+                        <input
+                          type="date"
+                          value={dateRange.end}
+                          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                          placeholder="End Date"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sales Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-cricket-border">
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Item Name</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Quantity Sold</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Sale Price (₹)</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Total Revenue (₹)</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Profit (₹)</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Stock Arrival Date</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Sale Date</th>
+                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredSales.length > 0 ? (
+                          filteredSales.map(sale => (
+                            <tr key={sale.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="px-6 py-4">
+                                <div className="font-bold text-slate-800">{sale.equipment_name}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="inline-block px-2.5 py-1 text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
+                                  {sale.category}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className="text-sm font-extrabold text-cricket-pitch">{sale.quantity_sold}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-semibold text-slate-700">₹{Number(sale.sale_price).toFixed(2)}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-bold text-blue-600">₹{Number(sale.total_revenue).toFixed(2)}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-sm font-black ${sale.profit > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                  ₹{Number(sale.profit).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold text-slate-700">
+                                    {new Date(sale.stock_arrival_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold text-slate-700">
+                                    {new Date(sale.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                    {new Date(sale.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <button
+                                  onClick={() => handleDeleteSale(sale.id, sale.equipment_name, sale.quantity_sold)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Delete Sale Record"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={9} className="text-center py-12 text-slate-400">
+                              <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                              <p className="text-sm font-semibold">No sales records found.</p>
+                              <p className="text-xs text-slate-400 mt-1">Start selling items from the Inventory Catalog.</p>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -890,7 +1323,15 @@ export default function App() {
                     required
                     placeholder="Select or type a category..."
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, category: value });
+                      // Register the category immediately when user types
+                      const trimmed = value.trim();
+                      if (trimmed && !CATEGORIES.includes(trimmed) && !customCategories.includes(trimmed)) {
+                        setCustomCategories(prev => [...prev, trimmed]);
+                      }
+                    }}
                     className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass bg-white"
                   />
                   <datalist id="add-category-options">
@@ -898,6 +1339,12 @@ export default function App() {
                       <option key={cat} value={cat} />
                     ))}
                   </datalist>
+                  {/* Show message when new category is detected */}
+                  {formData.category.trim() && !CATEGORIES.includes(formData.category.trim()) && !customCategories.includes(formData.category.trim()) && (
+                    <p className="text-[10px] text-emerald-600 mt-1 font-medium">
+                      New category "{formData.category.trim()}" will be added
+                    </p>
+                  )}
                 </div>
 
                 {/* Min stock threshold */}
@@ -930,7 +1377,7 @@ export default function App() {
 
                 {/* Cost Price */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price ($)</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price (₹)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -944,7 +1391,7 @@ export default function App() {
 
                 {/* Selling Price */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling ($)</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling (₹)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -961,7 +1408,7 @@ export default function App() {
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-2">
                 <ArrowUpRight className="w-4 h-4 text-emerald-600" />
                 <span className="text-xs font-semibold text-emerald-800">
-                  Potential profit per unit: ${(formData.selling_price - formData.cost_price).toFixed(2)}
+                  Potential profit per unit: ₹{(formData.selling_price - formData.cost_price).toFixed(2)}
                 </span>
               </div>
 
@@ -1026,7 +1473,15 @@ export default function App() {
                     required
                     placeholder="Select or type a category..."
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, category: value });
+                      // Register the category immediately when user types
+                      const trimmed = value.trim();
+                      if (trimmed && !CATEGORIES.includes(trimmed) && !customCategories.includes(trimmed)) {
+                        setCustomCategories(prev => [...prev, trimmed]);
+                      }
+                    }}
                     className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass bg-white"
                   />
                   <datalist id="edit-category-options">
@@ -1034,6 +1489,12 @@ export default function App() {
                       <option key={cat} value={cat} />
                     ))}
                   </datalist>
+                  {/* Show message when new category is detected */}
+                  {formData.category.trim() && !CATEGORIES.includes(formData.category.trim()) && !customCategories.includes(formData.category.trim()) && (
+                    <p className="text-[10px] text-emerald-600 mt-1 font-medium">
+                      New category "{formData.category.trim()}" will be added
+                    </p>
+                  )}
                 </div>
 
                 {/* Min stock threshold */}
@@ -1135,7 +1596,7 @@ export default function App() {
                 <h4 className="text-base font-bold text-slate-800 mt-1">{selectedItem.name}</h4>
                 <div className="flex gap-4 mt-2 text-xs font-semibold text-slate-500">
                   <span>Available Stock: <strong className="text-slate-800">{selectedItem.current_stock} units</strong></span>
-                  <span>Unit Cost: <strong className="text-slate-800">${selectedItem.cost_price}</strong></span>
+                  <span>Unit Cost: <strong className="text-slate-800">₹{selectedItem.cost_price}</strong></span>
                 </div>
               </div>
 
@@ -1156,7 +1617,7 @@ export default function App() {
 
               {/* Sale Price */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sale Price per unit ($)</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sale Price per unit (₹)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1178,15 +1639,15 @@ export default function App() {
                   <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-1.5 text-xs font-semibold">
                     <div className="flex justify-between text-slate-600">
                       <span>Total Revenue:</span>
-                      <span>${totalRevenue.toFixed(2)}</span>
+                      <span>₹{totalRevenue.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                       <span>Cost of Goods Sold (COGS):</span>
-                      <span>${totalCost.toFixed(2)}</span>
+                      <span>₹{totalCost.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-base font-black border-t border-emerald-100 pt-1.5 mt-1.5 text-emerald-800">
                       <span>Actual Profit:</span>
-                      <span>${actualProfit.toFixed(2)}</span>
+                      <span>₹{actualProfit.toFixed(2)}</span>
                     </div>
                   </div>
                 );
@@ -1213,7 +1674,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL 4: IMPORT EXCEL */}
+      {/* MODAL 4: IMPORT INVENTORY EXCEL */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full overflow-hidden animate-scaleIn">
@@ -1224,7 +1685,7 @@ export default function App() {
                   <FileSpreadsheet className="w-5 h-5 text-cricket-gold" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base m-0 text-white">Import from Excel</h3>
+                  <h3 className="font-extrabold text-base m-0 text-white">Import Inventory from Excel</h3>
                   <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload or update inventory via .xlsx file</p>
                 </div>
               </div>
@@ -1250,7 +1711,7 @@ export default function App() {
 
               {/* File Upload Form */}
               {!importResult ? (
-                <form onSubmit={handleImportExcel} className="space-y-4">
+                <form onSubmit={handleImportInventoryExcel} className="space-y-4">
                   {/* Drop Zone */}
                   <label
                     htmlFor="excel-upload"
@@ -1353,6 +1814,154 @@ export default function App() {
                     </button>
                     <button
                       onClick={closeImportModal}
+                      className="px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: IMPORT SALES EXCEL */}
+      {isSalesImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full overflow-hidden animate-scaleIn">
+            {/* Modal Header */}
+            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cricket-gold/20 rounded-lg">
+                  <FileSpreadsheet className="w-5 h-5 text-cricket-gold" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base m-0 text-white">Import Sales from Excel</h3>
+                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload sales records via .xlsx file</p>
+                </div>
+              </div>
+              <button onClick={closeSalesImportModal} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Required columns info */}
+              <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
+                <p className="text-xs font-bold text-sky-800 uppercase tracking-wider mb-2">Required Column Headers</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['equipment_name', 'quantity_sold', 'sale_price', 'sale_date'].map(col => (
+                    <code key={col} className="text-[11px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-md font-mono font-semibold">{col}</code>
+                  ))}
+                </div>
+                <p className="text-[10px] text-sky-600 mt-2 font-medium">
+                  <code className="font-mono">equipment_name</code> must match existing inventory items.<br />
+                  <code className="font-mono">sale_date</code> format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
+                </p>
+              </div>
+
+              {/* File Upload Form */}
+              {!salesImportResult ? (
+                <form onSubmit={handleImportSalesExcel} className="space-y-4">
+                  {/* Drop Zone */}
+                  <label
+                    htmlFor="sales-excel-upload"
+                    className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${salesImportFile
+                      ? 'border-cricket-grass bg-emerald-50'
+                      : 'border-slate-300 bg-slate-50 hover:border-cricket-grass hover:bg-emerald-50/40'
+                      }`}
+                  >
+                    {salesImportFile ? (
+                      <>
+                        <FileSpreadsheet className="w-8 h-8 text-cricket-grass mb-2" />
+                        <p className="text-sm font-bold text-cricket-grass">{salesImportFile.name}</p>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          {(salesImportFile.size / 1024).toFixed(1)} KB — click to change
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                        <p className="text-sm font-semibold text-slate-600">Click to upload or drag & drop</p>
+                        <p className="text-[10px] text-slate-400 mt-1">.xlsx or .xls files only</p>
+                      </>
+                    )}
+                    <input
+                      id="sales-excel-upload"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => setSalesImportFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+
+                  <div className="flex gap-2 justify-end pt-1 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={closeSalesImportModal}
+                      className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!salesImportFile || salesImportLoading}
+                      className="flex items-center gap-2 px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {salesImportLoading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          Import File
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Results Panel */
+                <div className="space-y-4">
+                  {/* Summary row */}
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
+                      <p className="text-2xl font-black text-emerald-700">{salesImportResult.imported_count}</p>
+                      <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">Sales Records Added</p>
+                    </div>
+                  </div>
+
+                  {/* Errors */}
+                  {salesImportResult.errors.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-rose-50 rounded-xl border border-rose-100">
+                      <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-2">
+                        {salesImportResult.errors.length} Row Error(s)
+                      </p>
+                      {salesImportResult.errors.map((err, i) => (
+                        <p key={i} className="text-xs text-rose-700 font-medium">{err}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {salesImportResult.errors.length === 0 && (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <p className="text-xs font-semibold text-emerald-800">All sales records imported successfully with no errors!</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-1 border-t border-slate-100">
+                    <button
+                      onClick={() => { setSalesImportFile(null); setSalesImportResult(null); }}
+                      className="px-4 py-2 border border-cricket-border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+                    >
+                      Import Another
+                    </button>
+                    <button
+                      onClick={closeSalesImportModal}
                       className="px-5 py-2 bg-cricket-grass hover:bg-cricket-forest text-white rounded-xl text-xs font-bold shadow-md transition-colors"
                     >
                       Done
