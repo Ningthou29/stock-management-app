@@ -30,7 +30,8 @@ import {
   FileSpreadsheet,
   Upload,
   Download,
-  Receipt
+  Receipt,
+  Menu
 } from 'lucide-react';
 
 // Types
@@ -74,6 +75,7 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'sales'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   // Data States
   const [inventory, setInventory] = useState<Equipment[]>([]);
@@ -198,7 +200,6 @@ export default function App() {
   const handleAddEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Ensure category is trimmed
       const categoryToSave = formData.category.trim();
 
       const response = await fetch(`${API_URL}/inventory`, {
@@ -206,7 +207,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          category: categoryToSave // Use trimmed category
+          category: categoryToSave
         })
       });
 
@@ -214,14 +215,12 @@ export default function App() {
         throw new Error('Failed to add item');
       }
 
-      // Register the category if it's new
       if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
         setCustomCategories(prev => [...prev, categoryToSave]);
       }
 
       showNotification('success', `Successfully added ${formData.name} to inventory!`);
       setIsAddModalOpen(false);
-      // Reset form
       setFormData({
         name: '',
         category: 'Bats',
@@ -241,7 +240,6 @@ export default function App() {
     if (!selectedItem) return;
 
     try {
-      // Ensure category is trimmed
       const categoryToSave = formData.category.trim();
 
       const response = await fetch(`${API_URL}/inventory/${selectedItem.id}`, {
@@ -249,7 +247,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          category: categoryToSave // Use trimmed category
+          category: categoryToSave
         })
       });
 
@@ -257,7 +255,6 @@ export default function App() {
         throw new Error('Failed to update item');
       }
 
-      // Register the category if it's new
       if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
         setCustomCategories(prev => [...prev, categoryToSave]);
       }
@@ -321,7 +318,6 @@ export default function App() {
     }
   };
 
-  // Delete Sales Record
   const handleDeleteSale = async (saleId: string, equipmentName: string, quantity: number) => {
     if (!window.confirm(`Are you sure you want to delete this sale of ${quantity}x ${equipmentName}? This will restore the stock quantity.`)) return;
 
@@ -336,13 +332,12 @@ export default function App() {
       }
 
       showNotification('success', `Sale of ${quantity}x ${equipmentName} has been deleted. Stock has been restored.`);
-      fetchData(); // Refresh all data
+      fetchData();
     } catch (error: any) {
       showNotification('error', error.message || 'Error deleting sale record.');
     }
   };
 
-  // Open Modals helper
   const openEditModal = (item: Equipment) => {
     setSelectedItem(item);
     setFormData({
@@ -365,7 +360,6 @@ export default function App() {
     setIsSellModalOpen(true);
   };
 
-  // Excel Export for Inventory
   const handleExportInventoryExcel = async () => {
     try {
       const response = await fetch(`${API_URL}/inventory/export`);
@@ -385,10 +379,8 @@ export default function App() {
     }
   };
 
-  // Excel Export for Sales Log
   const handleExportSalesExcel = async () => {
     try {
-      // Get filtered sales data
       const filteredData = filteredSales.map(sale => ({
         'Item Name': sale.equipment_name,
         'Category': sale.category,
@@ -406,7 +398,6 @@ export default function App() {
         return;
       }
 
-      // Call the backend export endpoint with filtered data
       const response = await fetch(`${API_URL}/sales/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -430,7 +421,6 @@ export default function App() {
     }
   };
 
-  // Excel Import for Inventory
   const handleImportInventoryExcel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile) return;
@@ -455,7 +445,6 @@ export default function App() {
     }
   };
 
-  // Excel Import for Sales Log
   const handleImportSalesExcel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!salesImportFile) return;
@@ -492,7 +481,6 @@ export default function App() {
     setSalesImportResult(null);
   };
 
-  // Filter Logic for Inventory
   const filteredInventory = inventory.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.category.toLowerCase().includes(searchQuery.toLowerCase());
@@ -501,7 +489,6 @@ export default function App() {
     return matchesSearch && matchesCategory && matchesLowStock;
   });
 
-  // Filter Logic for Sales
   const filteredSales = salesRecords.filter(sale => {
     const matchesSearch = sale.equipment_name.toLowerCase().includes(salesSearchQuery.toLowerCase()) ||
       sale.category.toLowerCase().includes(salesSearchQuery.toLowerCase());
@@ -516,7 +503,6 @@ export default function App() {
     return matchesSearch && matchesCategory && matchesDateRange();
   });
 
-  // Chart Data compilation (Category grouping)
   const chartData = CATEGORIES.map(category => {
     const categoryItems = inventory.filter(item => item.category === category);
     const totalCost = categoryItems.reduce((acc, curr) => acc + (curr.current_stock * curr.cost_price), 0);
@@ -530,7 +516,6 @@ export default function App() {
     };
   }).filter(data => data['Stock Value (₹)'] > 0 || data['Potential Profit (₹)'] > 0);
 
-  // Calculate sales summary
   const totalSalesRevenue = salesRecords.reduce((acc, sale) => acc + sale.total_revenue, 0);
   const totalSalesProfit = salesRecords.reduce((acc, sale) => acc + sale.profit, 0);
   const totalItemsSold = salesRecords.reduce((acc, sale) => acc + sale.quantity_sold, 0);
@@ -557,50 +542,91 @@ export default function App() {
         </div>
       )}
 
-      {/* Sidebar Navigation */}
-      <aside className="w-64 bg-cricket-pitch text-white flex flex-col justify-between border-r border-cricket-forest shadow-premium">
+      {/* Mobile Hamburger Button */}
+      <button
+        onClick={() => setIsSidebarOpen(true)}
+        className="lg:hidden p-2.5 rounded-xl bg-cricket-pitch text-white fixed top-4 left-4 z-50 shadow-lg hover:bg-cricket-forest transition-colors"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Navigation - Responsive */}
+      <aside className={`
+        fixed lg:relative inset-y-0 left-0 z-50 
+        w-64 bg-cricket-pitch text-white 
+        flex flex-col justify-between border-r border-cricket-forest shadow-premium
+        transform transition-transform duration-300 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0
+      `}>
         <div>
           {/* Brand Header */}
-          <div className="p-6 border-b border-cricket-forest flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cricket-gold flex items-center justify-center shadow-lg">
-              <span className="text-cricket-pitch font-bold text-xl">🏏</span>
+          <div className="p-6 border-b border-cricket-forest flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cricket-gold flex items-center justify-center shadow-lg flex-shrink-0">
+                <span className="text-cricket-pitch font-bold text-xl">🏏</span>
+              </div>
+              <div>
+                <h1 className="font-extrabold text-lg tracking-tight text-white m-0 leading-tight">STOCK YARD</h1>
+                <p className="text-[10px] text-cricket-goldlight font-medium uppercase tracking-wider">Maintenance Engine</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-extrabold text-lg tracking-tight text-white m-0 leading-tight">STOCK YARD</h1>
-              <p className="text-[10px] text-cricket-goldlight font-medium uppercase tracking-wider">Maintenance Engine</p>
-            </div>
+            {/* Close button for mobile */}
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="lg:hidden text-slate-400 hover:text-white transition-colors p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Navigation Links */}
           <nav className="p-4 space-y-1">
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => {
+                setActiveTab('dashboard');
+                setIsSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'dashboard'
                 ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
                 : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
                 }`}
             >
-              <LayoutDashboard className="w-4 h-4" />
+              <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
               Dashboard Overview
             </button>
             <button
-              onClick={() => setActiveTab('inventory')}
+              onClick={() => {
+                setActiveTab('inventory');
+                setIsSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'inventory'
                 ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
                 : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
                 }`}
             >
-              <Package className="w-4 h-4" />
+              <Package className="w-4 h-4 flex-shrink-0" />
               Inventory Catalog
             </button>
             <button
-              onClick={() => setActiveTab('sales')}
+              onClick={() => {
+                setActiveTab('sales');
+                setIsSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'sales'
                 ? 'bg-cricket-grass text-white shadow-inner border-l-4 border-cricket-gold'
                 : 'text-slate-400 hover:bg-cricket-forest hover:text-white'
                 }`}
             >
-              <Receipt className="w-4 h-4" />
+              <Receipt className="w-4 h-4 flex-shrink-0" />
               Sales Log
             </button>
           </nav>
@@ -610,549 +636,325 @@ export default function App() {
         <div className="p-4 border-t border-cricket-forest">
           <div className={`p-3 rounded-lg flex items-center gap-3 ${dbConnected ? 'bg-emerald-950/40 border border-emerald-900/60' : 'bg-rose-950/40 border border-rose-900/60'
             }`}>
-            <Database className={`w-4 h-4 ${dbConnected ? 'text-emerald-400' : 'text-rose-400'}`} />
-            <div>
+            <Database className={`w-4 h-4 flex-shrink-0 ${dbConnected ? 'text-emerald-400' : 'text-rose-400'}`} />
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-slate-300">Supabase Connection</p>
               <p className={`text-[10px] font-bold uppercase ${dbConnected ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {dbConnected ? 'Active / Online' : 'Disconnected'}
               </p>
             </div>
-            {loading && <RefreshCw className="w-3 h-3 text-slate-400 animate-spin ml-auto" />}
+            {loading && <RefreshCw className="w-3 h-3 text-slate-400 animate-spin ml-auto flex-shrink-0" />}
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-8 bg-cricket-cream">
-        {/* Top Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h2 className="text-3xl font-extrabold text-cricket-pitch m-0 tracking-tight">
-              {activeTab === 'dashboard' ? 'Dashboard Overview' :
-                activeTab === 'inventory' ? 'Inventory Catalog' :
-                  'Sales Log'}
-            </h2>
-            <p className="text-slate-500 text-sm">
-              {activeTab === 'dashboard'
-                ? 'High-level financial summaries and active category allocations.'
-                : activeTab === 'inventory'
-                  ? 'Search, filter, update or register items in the cricket stock database.'
-                  : 'Track all sales transactions, revenue, and profits.'
-              }
-            </p>
-          </div>
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-cricket-cream">
+        <div className="max-w-7xl mx-auto">
+          {/* Top Header */}
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 md:mb-8">
+            <div className="w-full md:w-auto">
+              <h2 className="text-2xl md:text-3xl font-extrabold text-cricket-pitch m-0 tracking-tight">
+                {activeTab === 'dashboard' ? 'Dashboard Overview' :
+                  activeTab === 'inventory' ? 'Inventory Catalog' :
+                    'Sales Log'}
+              </h2>
+              <p className="text-slate-500 text-xs md:text-sm mt-1">
+                {activeTab === 'dashboard'
+                  ? 'High-level financial summaries and active category allocations.'
+                  : activeTab === 'inventory'
+                    ? 'Search, filter, update or register items in the cricket stock database.'
+                    : 'Track all sales transactions, revenue, and profits.'
+                }
+              </p>
+            </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="p-2.5 rounded-xl border border-cricket-border bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            {activeTab === 'inventory' && (
-              <>
-                <button
-                  onClick={handleExportInventoryExcel}
-                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-sm font-semibold"
-                  title="Export inventory as Excel file"
-                >
-                  <Download className="w-4 h-4" />
-                  Export Excel
-                </button>
-                <button
-                  onClick={() => { setIsImportModalOpen(true); setImportResult(null); setImportFile(null); }}
-                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-sm font-semibold"
-                  title="Import inventory from Excel file"
-                >
-                  <Upload className="w-4 h-4" />
-                  Import Excel
-                </button>
-                <button
-                  onClick={() => {
-                    setFormData({
-                      name: '',
-                      category: 'Bats',
-                      current_stock: 10,
-                      min_stock_threshold: 5,
-                      cost_price: 50.0,
-                      selling_price: 90.0
-                    });
-                    setIsAddModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 bg-cricket-grass text-white px-5 py-2.5 rounded-xl hover:bg-cricket-forest transition-colors shadow-md text-sm font-semibold"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Equipment
-                </button>
-              </>
-            )}
-            {activeTab === 'sales' && (
-              <>
-                <button
-                  onClick={handleExportSalesExcel}
-                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-sm font-semibold"
-                  title="Export sales log as Excel file"
-                >
-                  <Download className="w-4 h-4" />
-                  Export Excel
-                </button>
-                <button
-                  onClick={() => { setIsSalesImportModalOpen(true); setSalesImportResult(null); setSalesImportFile(null); }}
-                  className="flex items-center gap-2 bg-white border border-cricket-border text-slate-700 px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-sm font-semibold"
-                  title="Import sales from Excel file"
-                >
-                  <Upload className="w-4 h-4" />
-                  Import Excel
-                </button>
-              </>
-            )}
-          </div>
+            <div className="flex gap-2 flex-wrap w-full md:w-auto">
+              <button
+                onClick={fetchData}
+                disabled={loading}
+                className="p-2.5 rounded-xl border border-cricket-border bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+                title="Refresh Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              {activeTab === 'inventory' && (
+                <>
+                  <button
+                    onClick={handleExportInventoryExcel}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-cricket-border text-slate-700 px-3 md:px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-xs md:text-sm font-semibold"
+                    title="Export inventory as Excel file"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Export Excel</span>
+                    <span className="sm:hidden">Export</span>
+                  </button>
+                  <button
+                    onClick={() => { setIsImportModalOpen(true); setImportResult(null); setImportFile(null); }}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-cricket-border text-slate-700 px-3 md:px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-xs md:text-sm font-semibold"
+                    title="Import inventory from Excel file"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import Excel</span>
+                    <span className="sm:hidden">Import</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFormData({
+                        name: '',
+                        category: 'Bats',
+                        current_stock: 10,
+                        min_stock_threshold: 5,
+                        cost_price: 50.0,
+                        selling_price: 90.0
+                      });
+                      setIsAddModalOpen(true);
+                    }}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-cricket-grass text-white px-4 md:px-5 py-2.5 rounded-xl hover:bg-cricket-forest transition-colors shadow-md text-xs md:text-sm font-semibold"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="hidden sm:inline">Add Equipment</span>
+                    <span className="sm:hidden">Add</span>
+                  </button>
+                </>
+              )}
+              {activeTab === 'sales' && (
+                <>
+                  <button
+                    onClick={handleExportSalesExcel}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-cricket-border text-slate-700 px-3 md:px-4 py-2.5 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors shadow-sm text-xs md:text-sm font-semibold"
+                    title="Export sales log as Excel file"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Export Excel</span>
+                    <span className="sm:hidden">Export</span>
+                  </button>
+                  <button
+                    onClick={() => { setIsSalesImportModalOpen(true); setSalesImportResult(null); setSalesImportFile(null); }}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-cricket-border text-slate-700 px-3 md:px-4 py-2.5 rounded-xl hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700 transition-colors shadow-sm text-xs md:text-sm font-semibold"
+                    title="Import sales from Excel file"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import Excel</span>
+                    <span className="sm:hidden">Import</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </header>
 
-        </header>
-
-        {/* LOADING INDICATOR */}
-        {loading && inventory.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-96">
-            <div className="w-12 h-12 border-4 border-cricket-grass border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-500 mt-4 font-semibold text-sm">Syncing with stock register...</p>
-          </div>
-        ) : (
-          <>
-            {/* VIEW 1: DASHBOARD VIEW */}
-            {activeTab === 'dashboard' && (
-              <div className="space-y-8 animate-fadeIn">
-                {/* Metric Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {/* Metric 1 */}
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Stock Value</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
-                        ₹{metrics.total_investment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Valued at aggregate cost prices</p>
-                    </div>
-                    <div className="p-3 bg-emerald-50 text-cricket-grass rounded-xl">
-                      <Coins className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  {/* Metric 2 */}
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-cricket-gold">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Projected Profit</span>
-                      <h3 className="text-2xl font-black text-cricket-gold mt-2">
-                        ₹{metrics.potential_profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">If all items are sold at selling price</p>
-                    </div>
-                    <div className="p-3 bg-amber-50 text-cricket-gold rounded-xl">
-                      <TrendingUp className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  {/* Metric 3 */}
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Active Catalog items</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{metrics.total_unique_items}</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">
-                        Total items in stock: <span className="font-bold">{metrics.total_stock_count} units</span>
-                      </p>
-                    </div>
-                    <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
-                      <Package className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  {/* Metric 4 - Low Stock Card */}
-                  <div className={`p-6 rounded-2xl border shadow-premium flex justify-between items-start transition-all ${metrics.low_stock_count > 0
-                    ? 'bg-rose-50 border-rose-200 border-b-4 border-b-rose-500 animate-pulse'
-                    : 'bg-white border-cricket-border'
-                    }`}>
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Low Stock Alerts</span>
-                      <h3 className={`text-2xl font-black mt-2 ${metrics.low_stock_count > 0 ? 'text-rose-600' : 'text-cricket-pitch'}`}>
-                        {metrics.low_stock_count}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Items at or below thresholds</p>
-                    </div>
-                    <div className={`p-3 rounded-xl ${metrics.low_stock_count > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
-                      <AlertTriangle className="w-6 h-6" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dashboard Secondary Layout: Chart & Low Stock Alerts */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Recharts Allocation */}
-                  <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-cricket-border shadow-premium">
-                    <div className="flex justify-between items-center mb-6">
+          {/* LOADING INDICATOR */}
+          {loading && inventory.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-96">
+              <div className="w-12 h-12 border-4 border-cricket-grass border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-slate-500 mt-4 font-semibold text-sm">Syncing with stock register...</p>
+            </div>
+          ) : (
+            <>
+              {/* VIEW 1: DASHBOARD VIEW */}
+              {activeTab === 'dashboard' && (
+                <div className="space-y-6 md:space-y-8 animate-fadeIn">
+                  {/* Metric Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+                    {/* Metric 1 */}
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
                       <div>
-                        <h4 className="text-lg font-bold text-cricket-pitch m-0">Category Breakdown</h4>
-                        <p className="text-xs text-slate-500">Stock Asset Valuation vs. Potential Profits</p>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Stock Value</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">
+                          ₹{metrics.total_investment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Valued at aggregate cost prices</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-emerald-50 text-cricket-grass rounded-xl">
+                        <Coins className="w-5 h-5 md:w-6 md:h-6" />
                       </div>
                     </div>
-                    <div className="h-80 w-full">
-                      {chartData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                            <XAxis dataKey="name" stroke="#94A3B8" fontSize={11} tickLine={false} />
-                            <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
-                            <Tooltip
-                              contentStyle={{ background: '#0A251C', border: 'none', borderRadius: '12px', color: '#fff' }}
-                              labelStyle={{ fontWeight: 'bold', color: '#C5A85A' }}
-                            />
-                            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                            <Bar dataKey="Stock Value (₹)" fill="#1A5C45" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="Potential Profit (₹)" fill="#C5A85A" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                          <Package className="w-10 h-10 mb-2 stroke-[1.5]" />
-                          <p className="text-sm font-semibold">No equipment registered yet. Go to Inventory tab to add items.</p>
+
+                    {/* Metric 2 */}
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-cricket-gold">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Projected Profit</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-gold mt-1 md:mt-2">
+                          ₹{metrics.potential_profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">If all items are sold at selling price</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-amber-50 text-cricket-gold rounded-xl">
+                        <TrendingUp className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
+                    </div>
+
+                    {/* Metric 3 */}
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Active Catalog items</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">{metrics.total_unique_items}</h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">
+                          Total in stock: <span className="font-bold">{metrics.total_stock_count} units</span>
+                        </p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-sky-50 text-sky-600 rounded-xl">
+                        <Package className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
+                    </div>
+
+                    {/* Metric 4 - Low Stock Card */}
+                    <div className={`p-4 md:p-6 rounded-2xl border shadow-premium flex justify-between items-start transition-all ${metrics.low_stock_count > 0
+                      ? 'bg-rose-50 border-rose-200 border-b-4 border-b-rose-500 animate-pulse'
+                      : 'bg-white border-cricket-border'
+                      }`}>
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Low Stock Alerts</span>
+                        <h3 className={`text-lg md:text-2xl font-black mt-1 md:mt-2 ${metrics.low_stock_count > 0 ? 'text-rose-600' : 'text-cricket-pitch'}`}>
+                          {metrics.low_stock_count}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Items at or below thresholds</p>
+                      </div>
+                      <div className={`p-2 md:p-3 rounded-xl ${metrics.low_stock_count > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <AlertTriangle className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dashboard Secondary Layout: Chart & Low Stock Alerts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+                    {/* Recharts Allocation */}
+                    <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium">
+                      <div className="flex justify-between items-center mb-4 md:mb-6">
+                        <div>
+                          <h4 className="text-base md:text-lg font-bold text-cricket-pitch m-0">Category Breakdown</h4>
+                          <p className="text-[10px] md:text-xs text-slate-500">Stock Asset Valuation vs. Potential Profits</p>
                         </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Low Stock Alert details */}
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex flex-col">
-                    <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
-                      <div>
-                        <h4 className="text-lg font-bold text-cricket-pitch m-0">Action Items</h4>
-                        <p className="text-xs text-slate-500">Replenish stock list immediately</p>
                       </div>
-                      <span className="bg-rose-100 text-rose-700 text-xs px-2.5 py-1 rounded-full font-bold">
-                        {metrics.low_stock_count} Alert(s)
-                      </span>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto space-y-3 max-h-[280px]">
-                      {metrics.low_stock_alerts && metrics.low_stock_alerts.length > 0 ? (
-                        metrics.low_stock_alerts.map(item => (
-                          <div key={item.id} className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-bold text-slate-800">{item.name}</p>
-                              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{item.category}</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs font-bold text-rose-600 block bg-rose-100/80 px-2 py-0.5 rounded-md">
-                                Stock: {item.current_stock} / {item.min_stock_threshold}
-                              </span>
-                            </div>
+                      <div className="h-64 md:h-80 w-full">
+                        {chartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                              <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} />
+                              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                              <Tooltip
+                                contentStyle={{ background: '#0A251C', border: 'none', borderRadius: '12px', color: '#fff' }}
+                                labelStyle={{ fontWeight: 'bold', color: '#C5A85A' }}
+                              />
+                              <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                              <Bar dataKey="Stock Value (₹)" fill="#1A5C45" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="Potential Profit (₹)" fill="#C5A85A" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                            <Package className="w-8 h-8 md:w-10 md:h-10 mb-2 stroke-[1.5]" />
+                            <p className="text-xs md:text-sm font-semibold text-center px-4">No equipment registered yet. Go to Inventory tab to add items.</p>
                           </div>
-                        ))
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full py-12 text-slate-400">
-                          <CheckCircle className="w-8 h-8 text-emerald-500 mb-2" />
-                          <p className="text-sm font-semibold text-center">All stocks are above minimum thresholds.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Low Stock Alert details */}
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex flex-col">
+                      <div className="flex justify-between items-center mb-3 md:mb-4 pb-3 md:pb-4 border-b border-slate-100">
+                        <div>
+                          <h4 className="text-base md:text-lg font-bold text-cricket-pitch m-0">Action Items</h4>
+                          <p className="text-[10px] md:text-xs text-slate-500">Replenish stock list immediately</p>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                        <span className="bg-rose-100 text-rose-700 text-[10px] md:text-xs px-2.5 py-1 rounded-full font-bold">
+                          {metrics.low_stock_count} Alert(s)
+                        </span>
+                      </div>
 
-                {/* Sales Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
-                        ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">From all sales transactions</p>
-                    </div>
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                      <TrendingUp className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
-                      <h3 className="text-2xl font-black text-emerald-600 mt-2">
-                        ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Actual profit from sales</p>
-                    </div>
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-                      <Coins className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{totalItemsSold}</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Across all transactions</p>
-                    </div>
-                    <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-                      <ShoppingCart className="w-6 h-6" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 2: INVENTORY VIEW */}
-            {activeTab === 'inventory' && (
-              <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden animate-fadeIn">
-                {/* Search / Filters Panel */}
-                <div className="p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  {/* Search box */}
-                  <div className="relative flex-1 max-w-md">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search items by name or category..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-cricket-border rounded-xl focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass text-sm bg-white"
-                    />
-                  </div>
-
-                  {/* Filter Toolbar options */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    {/* Category Selector */}
-                    <div className="flex items-center gap-2">
-                      <Filter className="w-3.5 h-3.5 text-slate-400" />
-                      <select
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
-                      >
-                        <option value="All">All Categories</option>
-                        {allCategories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Low Stock Toggle checkbox */}
-                    <label className="flex items-center gap-2 cursor-pointer bg-white px-3.5 py-2 border border-cricket-border rounded-xl hover:bg-slate-50 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={showLowStockOnly}
-                        onChange={(e) => setShowLowStockOnly(e.target.checked)}
-                        className="rounded border-slate-300 text-cricket-grass focus:ring-cricket-grass/40 w-3.5 h-3.5"
-                      />
-                      <span className="text-xs font-bold text-slate-600">Show Low Stock Only</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Table list */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-cricket-border">
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Item Name</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Stock Level</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Cost Price</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Selling Price</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Potential profit/unit</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Total potential profit</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Date Arrived</th>
-                        <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredInventory.length > 0 ? (
-                        filteredInventory.map(item => {
-                          const isLowStock = item.current_stock <= item.min_stock_threshold;
-                          const profitPerUnit = item.selling_price - item.cost_price;
-                          const totalPotentialProfit = profitPerUnit * item.current_stock;
-
-                          return (
-                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                              {/* Item Name */}
-                              <td className="px-6 py-4">
-                                <div className="font-bold text-slate-800">{item.name}</div>
-                              </td>
-
-                              {/* Category */}
-                              <td className="px-6 py-4">
-                                <span className="inline-block px-2.5 py-1 text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
-                                  {item.category}
+                      <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-[280px]">
+                        {metrics.low_stock_alerts && metrics.low_stock_alerts.length > 0 ? (
+                          metrics.low_stock_alerts.map(item => (
+                            <div key={item.id} className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-slate-800">{item.name}</p>
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{item.category}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-xs font-bold text-rose-600 block bg-rose-100/80 px-2 py-0.5 rounded-md">
+                                  Stock: {item.current_stock} / {item.min_stock_threshold}
                                 </span>
-                              </td>
-
-                              {/* Stock Level */}
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <span className={`text-sm font-extrabold ${isLowStock ? 'text-rose-600' : 'text-slate-800'}`}>
-                                    {item.current_stock}
-                                  </span>
-                                  <span className="text-slate-400 text-[10px] font-semibold">/ {item.min_stock_threshold} min</span>
-                                  {isLowStock && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" title="Low stock alert" />
-                                  )}
-                                </div>
-                              </td>
-
-                              {/* Cost Price */}
-                              <td className="px-6 py-4">
-                                <span className="text-sm font-semibold text-slate-700">₹{Number(item.cost_price).toFixed(2)}</span>
-                              </td>
-
-                              {/* Selling Price */}
-                              <td className="px-6 py-4">
-                                <span className="text-sm font-semibold text-slate-700">₹{Number(item.selling_price).toFixed(2)}</span>
-                              </td>
-
-                              {/* Unit Profit */}
-                              <td className="px-6 py-4">
-                                <span className={`text-sm font-bold ${profitPerUnit > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                  ₹{profitPerUnit.toFixed(2)}
-                                </span>
-                              </td>
-
-                              {/* Total Profit */}
-                              <td className="px-6 py-4">
-                                <span className={`text-sm font-black ${totalPotentialProfit > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
-                                  ₹{totalPotentialProfit.toFixed(2)}
-                                </span>
-                              </td>
-
-                              {/* Date Arrived */}
-                              <td className="px-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-slate-700">
-                                    {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
-                                    {new Date(item.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                              </td>
-
-                              {/* Actions */}
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex justify-end gap-1.5">
-                                  {/* Quick Sell Button */}
-                                  <button
-                                    onClick={() => openSellModal(item)}
-                                    disabled={item.current_stock === 0}
-                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors ${item.current_stock === 0
-                                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
-                                      : 'bg-cricket-gold text-cricket-pitch hover:bg-cricket-accent'
-                                      }`}
-                                    title={item.current_stock === 0 ? "Out of stock" : "Log a Sale"}
-                                  >
-                                    <ShoppingCart className="w-3.5 h-3.5" />
-                                    Sell
-                                  </button>
-
-                                  {/* Edit Button */}
-                                  <button
-                                    onClick={() => openEditModal(item)}
-                                    className="p-1.5 text-slate-500 hover:text-cricket-grass hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                                    title="Edit Details"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  {/* Delete Button */}
-                                  <button
-                                    onClick={() => handleDeleteEquipment(item.id, item.name)}
-                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                    title="Delete Equipment"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={9} className="text-center py-12 text-slate-400">
-                            <Info className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                            <p className="text-sm font-semibold">No equipment found matching filters.</p>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 3: SALES LOG */}
-            {activeTab === 'sales' && (
-              <div className="space-y-6 animate-fadeIn">
-                {/* Sales Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">
-                        ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">From {salesRecords.length} transactions</p>
-                    </div>
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                      <TrendingUp className="w-6 h-6" />
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full py-8 md:py-12 text-slate-400">
+                            <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-emerald-500 mb-2" />
+                            <p className="text-xs md:text-sm font-semibold text-center px-4">All stocks are above minimum thresholds.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
-                      <h3 className="text-2xl font-black text-emerald-600 mt-2">
-                        ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Actual profit from sales</p>
+                  {/* Sales Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 mt-6 md:mt-8">
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">
+                          ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">From all sales transactions</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-blue-50 text-blue-600 rounded-xl">
+                        <TrendingUp className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
                     </div>
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-                      <Coins className="w-6 h-6" />
-                    </div>
-                  </div>
 
-                  <div className="bg-white p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
-                      <h3 className="text-2xl font-black text-cricket-pitch mt-2">{totalItemsSold}</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-1">Across all categories</p>
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
+                        <h3 className="text-lg md:text-2xl font-black text-emerald-600 mt-1 md:mt-2">
+                          ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Actual profit from sales</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                        <Coins className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
                     </div>
-                    <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-                      <ShoppingCart className="w-6 h-6" />
+
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">{totalItemsSold}</h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Across all transactions</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-purple-50 text-purple-600 rounded-xl">
+                        <ShoppingCart className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* Sales Log Table */}
-                <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden">
+              {/* VIEW 2: INVENTORY VIEW */}
+              {activeTab === 'inventory' && (
+                <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden animate-fadeIn">
                   {/* Search / Filters Panel */}
-                  <div className="p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="p-4 md:p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
                     {/* Search box */}
-                    <div className="relative flex-1 max-w-md">
+                    <div className="relative w-full md:max-w-md">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         type="text"
-                        placeholder="Search sales by item name or category..."
-                        value={salesSearchQuery}
-                        onChange={(e) => setSalesSearchQuery(e.target.value)}
+                        placeholder="Search items by name or category..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-cricket-border rounded-xl focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass text-sm bg-white"
                       />
                     </div>
 
                     {/* Filter Toolbar options */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      {/* Category Selector */}
-                      <div className="flex items-center gap-2">
-                        <Filter className="w-3.5 h-3.5 text-slate-400" />
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
+                      <div className="flex items-center gap-2 flex-1 md:flex-none">
+                        <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <select
-                          value={salesCategoryFilter}
-                          onChange={(e) => setSalesCategoryFilter(e.target.value)}
-                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="flex-1 md:flex-none border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
                         >
                           <option value="All">All Categories</option>
                           {allCategories.map(cat => (
@@ -1161,132 +963,339 @@ export default function App() {
                         </select>
                       </div>
 
-                      {/* Date Range Filters */}
-                      <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 border border-cricket-border rounded-xl hover:bg-slate-50 transition-colors flex-1 md:flex-none justify-center">
                         <input
-                          type="date"
-                          value={dateRange.start}
-                          onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
-                          placeholder="Start Date"
+                          type="checkbox"
+                          checked={showLowStockOnly}
+                          onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                          className="rounded border-slate-300 text-cricket-grass focus:ring-cricket-grass/40 w-3.5 h-3.5"
                         />
-                        <span className="text-slate-400 text-xs">to</span>
-                        <input
-                          type="date"
-                          value={dateRange.end}
-                          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                          className="border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
-                          placeholder="End Date"
-                        />
+                        <span className="text-xs font-bold text-slate-600">Low Stock</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Table list - Scrollable on mobile */}
+                  <div className="overflow-x-auto -mx-4 md:mx-0">
+                    <div className="inline-block min-w-full align-middle">
+                      <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                        <table className="min-w-[700px] md:min-w-full divide-y divide-slate-200">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Item</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Stock</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Cost</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Sell</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Unit Profit</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden lg:table-cell">Total Profit</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden xl:table-cell">Arrived</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-bold uppercase text-slate-500 tracking-wider">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {filteredInventory.length > 0 ? (
+                              filteredInventory.map(item => {
+                                const isLowStock = item.current_stock <= item.min_stock_threshold;
+                                const profitPerUnit = item.selling_price - item.cost_price;
+                                const totalPotentialProfit = profitPerUnit * item.current_stock;
+
+                                return (
+                                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <div className="font-bold text-slate-800 text-sm md:text-base">{item.name}</div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="inline-block px-2 py-0.5 md:px-2.5 md:py-1 text-[8px] md:text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
+                                        {item.category}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <span className={`text-xs md:text-sm font-extrabold ${isLowStock ? 'text-rose-600' : 'text-slate-800'}`}>
+                                          {item.current_stock}
+                                        </span>
+                                        <span className="text-slate-400 text-[8px] md:text-[10px] font-semibold hidden sm:inline">/ {item.min_stock_threshold}</span>
+                                        {isLowStock && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" title="Low stock alert" />
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="text-xs md:text-sm font-semibold text-slate-700">₹{Number(item.cost_price).toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="text-xs md:text-sm font-semibold text-slate-700">₹{Number(item.selling_price).toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className={`text-xs md:text-sm font-bold ${profitPerUnit > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                        ₹{profitPerUnit.toFixed(2)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden lg:table-cell">
+                                      <span className={`text-xs md:text-sm font-black ${totalPotentialProfit > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                        ₹{totalPotentialProfit.toFixed(2)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden xl:table-cell">
+                                      <div className="flex flex-col">
+                                        <span className="text-xs md:text-sm font-semibold text-slate-700">
+                                          {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        </span>
+                                        <span className="text-[8px] md:text-[10px] text-slate-400 font-medium">
+                                          {new Date(item.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 text-right">
+                                      <div className="flex justify-end gap-1">
+                                        <button
+                                          onClick={() => openSellModal(item)}
+                                          disabled={item.current_stock === 0}
+                                          className={`flex items-center gap-0.5 md:gap-1 px-2 md:px-3 py-1 rounded-lg text-[10px] md:text-xs font-bold shadow-sm transition-colors ${item.current_stock === 0
+                                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
+                                            : 'bg-cricket-gold text-cricket-pitch hover:bg-cricket-accent'
+                                            }`}
+                                          title={item.current_stock === 0 ? "Out of stock" : "Log a Sale"}
+                                        >
+                                          <ShoppingCart className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                          <span className="hidden sm:inline">Sell</span>
+                                        </button>
+                                        <button
+                                          onClick={() => openEditModal(item)}
+                                          className="p-1 text-slate-500 hover:text-cricket-grass hover:bg-slate-100 rounded-lg transition-colors"
+                                          title="Edit Details"
+                                        >
+                                          <Edit3 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteEquipment(item.id, item.name)}
+                                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                          title="Delete Equipment"
+                                        >
+                                          <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr>
+                                <td colSpan={9} className="text-center py-8 md:py-12 text-slate-400">
+                                  <Info className="w-6 h-6 md:w-8 md:h-8 mx-auto mb-2 text-slate-300" />
+                                  <p className="text-sm font-semibold">No equipment found matching filters.</p>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW 3: SALES LOG */}
+              {activeTab === 'sales' && (
+                <div className="space-y-4 md:space-y-6 animate-fadeIn">
+                  {/* Sales Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">
+                          ₹{totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">From {salesRecords.length} transactions</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-blue-50 text-blue-600 rounded-xl">
+                        <TrendingUp className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start border-b-4 border-b-emerald-500">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Profit</span>
+                        <h3 className="text-lg md:text-2xl font-black text-emerald-600 mt-1 md:mt-2">
+                          ₹{totalSalesProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Actual profit from sales</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                        <Coins className="w-5 h-5 md:w-6 md:h-6" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border border-cricket-border shadow-premium flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] md:text-xs font-bold uppercase text-slate-400 tracking-wider">Total Items Sold</span>
+                        <h3 className="text-lg md:text-2xl font-black text-cricket-pitch mt-1 md:mt-2">{totalItemsSold}</h3>
+                        <p className="text-[8px] md:text-[10px] text-slate-500 font-semibold mt-0.5 md:mt-1">Across all categories</p>
+                      </div>
+                      <div className="p-2 md:p-3 bg-purple-50 text-purple-600 rounded-xl">
+                        <ShoppingCart className="w-5 h-5 md:w-6 md:h-6" />
                       </div>
                     </div>
                   </div>
 
-                  {/* Sales Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-cricket-border">
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Item Name</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Quantity Sold</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Sale Price (₹)</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Total Revenue (₹)</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Profit (₹)</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Stock Arrival Date</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider">Sale Date</th>
-                          <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 tracking-wider text-center">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredSales.length > 0 ? (
-                          filteredSales.map(sale => (
-                            <tr key={sale.id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="font-bold text-slate-800">{sale.equipment_name}</div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="inline-block px-2.5 py-1 text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
-                                  {sale.category}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <span className="text-sm font-extrabold text-cricket-pitch">{sale.quantity_sold}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm font-semibold text-slate-700">₹{Number(sale.sale_price).toFixed(2)}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm font-bold text-blue-600">₹{Number(sale.total_revenue).toFixed(2)}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`text-sm font-black ${sale.profit > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                  ₹{Number(sale.profit).toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-slate-700">
-                                    {new Date(sale.stock_arrival_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-slate-700">
-                                    {new Date(sale.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
-                                    {new Date(sale.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <button
-                                  onClick={() => handleDeleteSale(sale.id, sale.equipment_name, sale.quantity_sold)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="Delete Sale Record"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={9} className="text-center py-12 text-slate-400">
-                              <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                              <p className="text-sm font-semibold">No sales records found.</p>
-                              <p className="text-xs text-slate-400 mt-1">Start selling items from the Inventory Catalog.</p>
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                  {/* Sales Log Table */}
+                  <div className="bg-white rounded-2xl border border-cricket-border shadow-premium overflow-hidden">
+                    {/* Search / Filters Panel */}
+                    <div className="p-4 md:p-6 border-b border-cricket-border bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
+                      <div className="relative w-full md:max-w-md">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search sales by item name..."
+                          value={salesSearchQuery}
+                          onChange={(e) => setSalesSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-cricket-border rounded-xl focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 focus:border-cricket-grass text-sm bg-white"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
+                        <div className="flex items-center gap-2 flex-1 md:flex-none">
+                          <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                          <select
+                            value={salesCategoryFilter}
+                            onChange={(e) => setSalesCategoryFilter(e.target.value)}
+                            className="flex-1 md:flex-none border border-cricket-border rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                          >
+                            <option value="All">All Categories</option>
+                            {allCategories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-1 md:gap-2 flex-1 md:flex-none">
+                          <input
+                            type="date"
+                            value={dateRange.start}
+                            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                            className="flex-1 md:flex-none border border-cricket-border rounded-xl px-2 md:px-3 py-2 bg-white text-[10px] md:text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                            placeholder="Start"
+                          />
+                          <span className="text-slate-400 text-[10px] md:text-xs">to</span>
+                          <input
+                            type="date"
+                            value={dateRange.end}
+                            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                            className="flex-1 md:flex-none border border-cricket-border rounded-xl px-2 md:px-3 py-2 bg-white text-[10px] md:text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                            placeholder="End"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sales Table - Scrollable on mobile */}
+                    <div className="overflow-x-auto -mx-4 md:mx-0">
+                      <div className="inline-block min-w-full align-middle">
+                        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                          <table className="min-w-[800px] md:min-w-full divide-y divide-slate-200">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Item</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Qty</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Sale Price</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Revenue</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden sm:table-cell">Profit</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden lg:table-cell">Arrival Date</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden xl:table-cell">Sale Date</th>
+                                <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {filteredSales.length > 0 ? (
+                                filteredSales.map(sale => (
+                                  <tr key={sale.id} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <div className="font-bold text-slate-800 text-sm md:text-base">{sale.equipment_name}</div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="inline-block px-2 py-0.5 md:px-2.5 md:py-1 text-[8px] md:text-[10px] font-bold rounded-full bg-slate-100 text-slate-600 uppercase tracking-wider">
+                                        {sale.category}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 text-center">
+                                      <span className="text-xs md:text-sm font-extrabold text-cricket-pitch">{sale.quantity_sold}</span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="text-xs md:text-sm font-semibold text-slate-700">₹{Number(sale.sale_price).toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <span className="text-xs md:text-sm font-bold text-blue-600">₹{Number(sale.total_revenue).toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden sm:table-cell">
+                                      <span className={`text-xs md:text-sm font-black ${sale.profit > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        ₹{Number(sale.profit).toFixed(2)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden lg:table-cell">
+                                      <span className="text-xs md:text-sm font-semibold text-slate-700">
+                                        {new Date(sale.stock_arrival_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden xl:table-cell">
+                                      <div className="flex flex-col">
+                                        <span className="text-xs md:text-sm font-semibold text-slate-700">
+                                          {new Date(sale.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        </span>
+                                        <span className="text-[8px] md:text-[10px] text-slate-400 font-medium">
+                                          {new Date(sale.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 text-center">
+                                      <button
+                                        onClick={() => handleDeleteSale(sale.id, sale.equipment_name, sale.quantity_sold)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                        title="Delete Sale Record"
+                                      >
+                                        <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={9} className="text-center py-8 md:py-12 text-slate-400">
+                                    <Receipt className="w-6 h-6 md:w-8 md:h-8 mx-auto mb-2 text-slate-300" />
+                                    <p className="text-sm font-semibold">No sales records found.</p>
+                                    <p className="text-[10px] md:text-xs text-slate-400 mt-1">Start selling items from the Inventory Catalog.</p>
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </main>
 
       {/* MODAL 1: ADD NEW EQUIPMENT */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
-            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full max-h-[90vh] overflow-y-auto animate-slideUp md:animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <h3 className="font-extrabold text-base m-0 text-white">Add New Equipment</h3>
                 <p className="text-[10px] text-cricket-goldlight mt-0.5">Register new batch in the database catalog</p>
               </div>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddEquipment} className="p-6 space-y-4">
-              {/* Name */}
+            <form onSubmit={handleAddEquipment} className="p-4 md:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Equipment Name</label>
                 <input
@@ -1299,8 +1308,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Category */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                     Category
@@ -1315,7 +1323,6 @@ export default function App() {
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({ ...formData, category: value });
-                      // Register the category immediately when user types
                       const trimmed = value.trim();
                       if (trimmed && !CATEGORIES.includes(trimmed) && !customCategories.includes(trimmed)) {
                         setCustomCategories(prev => [...prev, trimmed]);
@@ -1328,7 +1335,6 @@ export default function App() {
                       <option key={cat} value={cat} />
                     ))}
                   </datalist>
-                  {/* Show message when new category is detected */}
                   {formData.category.trim() && !CATEGORIES.includes(formData.category.trim()) && !customCategories.includes(formData.category.trim()) && (
                     <p className="text-[10px] text-emerald-600 mt-1 font-medium">
                       New category "{formData.category.trim()}" will be added
@@ -1336,7 +1342,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Min stock threshold */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Min Threshold</label>
                   <input
@@ -1350,8 +1355,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                {/* Current Stock */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Initial Stock</label>
                   <input
@@ -1364,7 +1368,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* Cost Price */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price (₹)</label>
                   <input
@@ -1378,8 +1381,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Selling Price */}
-                <div>
+                <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling (₹)</label>
                   <input
                     type="number"
@@ -1393,15 +1395,13 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Potential unit profit helper info */}
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-2">
-                <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                <ArrowUpRight className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                 <span className="text-xs font-semibold text-emerald-800">
                   Potential profit per unit: ₹{(formData.selling_price - formData.cost_price).toFixed(2)}
                 </span>
               </div>
 
-              {/* Form buttons */}
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -1424,20 +1424,19 @@ export default function App() {
 
       {/* MODAL 2: EDIT EQUIPMENT */}
       {isEditModalOpen && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
-            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full max-h-[90vh] overflow-y-auto animate-slideUp md:animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <h3 className="font-extrabold text-base m-0 text-white">Update Equipment</h3>
                 <p className="text-[10px] text-cricket-goldlight mt-0.5">Edit attributes of {selectedItem.name}</p>
               </div>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleEditEquipment} className="p-6 space-y-4">
-              {/* Name */}
+            <form onSubmit={handleEditEquipment} className="p-4 md:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Equipment Name</label>
                 <input
@@ -1449,8 +1448,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Category */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                     Category
@@ -1465,7 +1463,6 @@ export default function App() {
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({ ...formData, category: value });
-                      // Register the category immediately when user types
                       const trimmed = value.trim();
                       if (trimmed && !CATEGORIES.includes(trimmed) && !customCategories.includes(trimmed)) {
                         setCustomCategories(prev => [...prev, trimmed]);
@@ -1478,7 +1475,6 @@ export default function App() {
                       <option key={cat} value={cat} />
                     ))}
                   </datalist>
-                  {/* Show message when new category is detected */}
                   {formData.category.trim() && !CATEGORIES.includes(formData.category.trim()) && !customCategories.includes(formData.category.trim()) && (
                     <p className="text-[10px] text-emerald-600 mt-1 font-medium">
                       New category "{formData.category.trim()}" will be added
@@ -1486,7 +1482,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Min stock threshold */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Min Threshold</label>
                   <input
@@ -1500,8 +1495,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                {/* Current Stock */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Stock Level</label>
                   <input
@@ -1514,7 +1508,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* Cost Price */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cost Price (₹)</label>
                   <input
@@ -1528,8 +1521,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Selling Price */}
-                <div>
+                <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling (₹)</label>
                   <input
                     type="number"
@@ -1543,7 +1535,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Form buttons */}
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -1566,30 +1557,28 @@ export default function App() {
 
       {/* MODAL 3: QUICK SELL (LOG A SALE) */}
       {isSellModalOpen && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full overflow-hidden animate-scaleIn">
-            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl border border-cricket-border max-w-md w-full max-h-[90vh] overflow-y-auto animate-slideUp md:animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <h3 className="font-extrabold text-base m-0 text-white">Log Cricket Equipment Sale</h3>
                 <p className="text-[10px] text-cricket-goldlight mt-0.5">Record customer purchase details</p>
               </div>
-              <button onClick={() => setIsSellModalOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={() => setIsSellModalOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleLogSale} className="p-6 space-y-4">
-              {/* Product Info Summary */}
+            <form onSubmit={handleLogSale} className="p-4 md:p-6 space-y-4">
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Product</p>
                 <h4 className="text-base font-bold text-slate-800 mt-1">{selectedItem.name}</h4>
-                <div className="flex gap-4 mt-2 text-xs font-semibold text-slate-500">
+                <div className="flex flex-wrap gap-4 mt-2 text-xs font-semibold text-slate-500">
                   <span>Available Stock: <strong className="text-slate-800">{selectedItem.current_stock} units</strong></span>
                   <span>Unit Cost: <strong className="text-slate-800">₹{selectedItem.cost_price}</strong></span>
                 </div>
               </div>
 
-              {/* Quantity Sold */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Quantity Sold</label>
                 <input
@@ -1604,7 +1593,6 @@ export default function App() {
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">Cannot exceed current stock level of {selectedItem.current_stock}.</p>
               </div>
 
-              {/* Sale Price */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sale Price per unit (₹)</label>
                 <input
@@ -1618,7 +1606,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Dynamic calculations breakdown */}
               {(() => {
                 const totalRevenue = sellData.quantity_sold * sellData.sale_price;
                 const totalCost = sellData.quantity_sold * selectedItem.cost_price;
@@ -1642,7 +1629,6 @@ export default function App() {
                 );
               })()}
 
-              {/* Action buttons */}
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -1665,26 +1651,24 @@ export default function App() {
 
       {/* MODAL 4: IMPORT INVENTORY EXCEL */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full overflow-hidden animate-scaleIn">
-            {/* Modal Header */}
-            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full max-h-[90vh] overflow-y-auto animate-slideUp md:animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-cricket-gold/20 rounded-lg">
                   <FileSpreadsheet className="w-5 h-5 text-cricket-gold" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base m-0 text-white">Import Inventory from Excel</h3>
-                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload or update inventory via .xlsx file</p>
+                  <h3 className="font-extrabold text-base m-0 text-white">Import Inventory</h3>
+                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload via .xlsx file</p>
                 </div>
               </div>
-              <button onClick={closeImportModal} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={closeImportModal} className="text-slate-400 hover:text-white transition-colors p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Required columns info */}
+            <div className="p-4 md:p-6 space-y-5">
               <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
                 <p className="text-xs font-bold text-sky-800 uppercase tracking-wider mb-2">Required Column Headers</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -1698,10 +1682,8 @@ export default function App() {
                 </p>
               </div>
 
-              {/* File Upload Form */}
               {!importResult ? (
                 <form onSubmit={handleImportInventoryExcel} className="space-y-4">
-                  {/* Drop Zone */}
                   <label
                     htmlFor="excel-upload"
                     className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${importFile
@@ -1761,21 +1743,18 @@ export default function App() {
                   </div>
                 </form>
               ) : (
-                /* Results Panel */
                 <div className="space-y-4">
-                  {/* Summary row */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
                       <p className="text-2xl font-black text-emerald-700">{importResult.imported_count}</p>
-                      <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">New Items Added</p>
+                      <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">New Items</p>
                     </div>
                     <div className="p-3 bg-sky-50 rounded-xl border border-sky-100 text-center">
                       <p className="text-2xl font-black text-sky-700">{importResult.updated_count}</p>
-                      <p className="text-[10px] font-bold text-sky-600 uppercase tracking-wider mt-0.5">Items Updated</p>
+                      <p className="text-[10px] font-bold text-sky-600 uppercase tracking-wider mt-0.5">Updated</p>
                     </div>
                   </div>
 
-                  {/* Errors */}
                   {importResult.errors.length > 0 && (
                     <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-rose-50 rounded-xl border border-rose-100">
                       <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-2">
@@ -1790,7 +1769,7 @@ export default function App() {
                   {importResult.errors.length === 0 && (
                     <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                       <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <p className="text-xs font-semibold text-emerald-800">All rows imported successfully with no errors!</p>
+                      <p className="text-xs font-semibold text-emerald-800">All rows imported successfully!</p>
                     </div>
                   )}
 
@@ -1817,26 +1796,24 @@ export default function App() {
 
       {/* MODAL 5: IMPORT SALES EXCEL */}
       {isSalesImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full overflow-hidden animate-scaleIn">
-            {/* Modal Header */}
-            <div className="bg-cricket-pitch text-white px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-cricket-dark/60 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl border border-cricket-border max-w-lg w-full max-h-[90vh] overflow-y-auto animate-slideUp md:animate-scaleIn">
+            <div className="bg-cricket-pitch text-white px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-cricket-gold/20 rounded-lg">
                   <FileSpreadsheet className="w-5 h-5 text-cricket-gold" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base m-0 text-white">Import Sales from Excel</h3>
-                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload sales records via .xlsx file</p>
+                  <h3 className="font-extrabold text-base m-0 text-white">Import Sales</h3>
+                  <p className="text-[10px] text-cricket-goldlight mt-0.5">Bulk upload sales records</p>
                 </div>
               </div>
-              <button onClick={closeSalesImportModal} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={closeSalesImportModal} className="text-slate-400 hover:text-white transition-colors p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Required columns info */}
+            <div className="p-4 md:p-6 space-y-5">
               <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
                 <p className="text-xs font-bold text-sky-800 uppercase tracking-wider mb-2">Required Column Headers</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -1850,10 +1827,8 @@ export default function App() {
                 </p>
               </div>
 
-              {/* File Upload Form */}
               {!salesImportResult ? (
                 <form onSubmit={handleImportSalesExcel} className="space-y-4">
-                  {/* Drop Zone */}
                   <label
                     htmlFor="sales-excel-upload"
                     className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${salesImportFile
@@ -1913,9 +1888,7 @@ export default function App() {
                   </div>
                 </form>
               ) : (
-                /* Results Panel */
                 <div className="space-y-4">
-                  {/* Summary row */}
                   <div className="grid grid-cols-1 gap-3">
                     <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
                       <p className="text-2xl font-black text-emerald-700">{salesImportResult.imported_count}</p>
@@ -1923,7 +1896,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Errors */}
                   {salesImportResult.errors.length > 0 && (
                     <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-rose-50 rounded-xl border border-rose-100">
                       <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-2">
@@ -1938,7 +1910,7 @@ export default function App() {
                   {salesImportResult.errors.length === 0 && (
                     <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                       <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <p className="text-xs font-semibold text-emerald-800">All sales records imported successfully with no errors!</p>
+                      <p className="text-xs font-semibold text-emerald-800">All sales records imported successfully!</p>
                     </div>
                   )}
 
