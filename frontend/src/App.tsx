@@ -110,18 +110,7 @@ export default function App() {
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const allCategories = [...CATEGORIES, ...customCategories];
 
-  // Helper to register a new category if it's not already in the list
-  const registerCategory = (cat: string) => {
-    const trimmed = cat.trim();
-    if (trimmed) {
-      // Check if it already exists in the current categories
-      const exists = CATEGORIES.some(c => c === trimmed) ||
-        customCategories.some(c => c === trimmed);
-      if (!exists) {
-        setCustomCategories(prev => [...prev, trimmed]);
-      }
-    }
-  };
+
 
   // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
