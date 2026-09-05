@@ -221,7 +221,13 @@ def add_inventory_item(item: EquipmentCreate):
         exit_date = data_dict.pop("exit_date", None)
         exit_quantity = data_dict.pop("exit_quantity", None)
 
-        response = supabase.table("equipment").insert(data_dict).execute()
+        if data_dict.get("selling_price") is None:
+            data_dict["selling_price"] = 0.0
+
+        # Remove any other None fields
+        clean_data = {k: v for k, v in data_dict.items() if v is not None}
+
+        response = supabase.table("equipment").insert(clean_data).execute()
         if not response.data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -233,7 +239,7 @@ def add_inventory_item(item: EquipmentCreate):
         if (exit_quantity and exit_quantity > 0) or exit_date:
             sold_at_val = exit_date if exit_date else datetime.now().isoformat()
             qty_val = exit_quantity if exit_quantity else 0
-            selling_p = new_item.get("selling_price", 0.0)
+            selling_p = float(new_item.get("selling_price") or 0.0)
 
             supabase.table("sales_log").insert({
                 "equipment_id": item_id,
@@ -243,6 +249,8 @@ def add_inventory_item(item: EquipmentCreate):
             }).execute()
 
         return new_item
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error adding inventory item: {str(e)}")
         raise HTTPException(
@@ -760,19 +768,19 @@ async def upload_inventory_excel(file: UploadFile = File(...)):
             detail="The uploaded Excel sheet appears to be empty."
         )
 
-    required_cols = ["name", "category", "current_stock", "cost_price", "selling_price"]
+    required_cols = ["name", "category", "current_stock", "cost_price"]
     for col in required_cols:
         if col not in headers:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Missing required column '{col}'. Excel sheet must have headers: name, category, current_stock, cost_price, selling_price"
+                detail=f"Missing required column '{col}'. Excel sheet must have headers: name, category, current_stock, cost_price"
             )
 
     name_idx = headers.index("name")
     category_idx = headers.index("category")
     stock_idx = headers.index("current_stock")
     cost_idx = headers.index("cost_price")
-    sell_idx = headers.index("selling_price")
+    sell_idx = headers.index("selling_price") if "selling_price" in headers else -1
     threshold_idx = headers.index("min_stock_threshold") if "min_stock_threshold" in headers else -1
 
     VALID_CATEGORIES = {'Bats', 'Balls', 'Gloves', 'Pads', 'Helmets', 'Accessories', 'Bags', 'Clothing'}
@@ -835,15 +843,15 @@ async def upload_inventory_excel(file: UploadFile = File(...)):
                 errors.append(f"Row {row_num} ('{name}'): Invalid cost_price value.")
                 continue
 
-            # Parse selling price
-            try:
-                selling_price = float(row[sell_idx])
-                if selling_price < 0:
-                    errors.append(f"Row {row_num} ('{name}'): Selling price cannot be negative.")
-                    continue
-            except (ValueError, TypeError):
-                errors.append(f"Row {row_num} ('{name}'): Invalid selling_price value.")
-                continue
+            # Parse selling price (optional, defaults to 0.0)
+            selling_price = 0.0
+            if sell_idx != -1 and row[sell_idx] is not None:
+                try:
+                    selling_price = float(row[sell_idx])
+                    if selling_price < 0:
+                        selling_price = 0.0
+                except (ValueError, TypeError):
+                    selling_price = 0.0
 
             # Parse min stock threshold
             min_stock_threshold = 5
