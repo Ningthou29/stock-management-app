@@ -72,8 +72,8 @@ def get_dashboard_metrics():
         items = response.data or []
         
         total_investment = sum((item.get("current_stock") or 0) * float(item.get("cost_price") or 0.0) for item in items)
-        potential_revenue = sum((item.get("current_stock") or 0) * float(item.get("selling_price") or 0.0) for item in items)
-        potential_profit = potential_revenue - total_investment
+        potential_revenue = 0.0
+        potential_profit = 0.0
         
         low_stock_alerts = [
             item for item in items 
@@ -221,8 +221,8 @@ def add_inventory_item(item: EquipmentCreate):
         exit_date = data_dict.pop("exit_date", None)
         exit_quantity = data_dict.pop("exit_quantity", None)
 
-        if data_dict.get("selling_price") is None:
-            data_dict["selling_price"] = 0.0
+        # Remove selling_price from insert payload (not used)
+        data_dict.pop("selling_price", None)
 
         # Remove any other None fields
         clean_data = {k: v for k, v in data_dict.items() if v is not None}
@@ -239,12 +239,11 @@ def add_inventory_item(item: EquipmentCreate):
         if (exit_quantity and exit_quantity > 0) or exit_date:
             sold_at_val = exit_date if exit_date else datetime.now().isoformat()
             qty_val = exit_quantity if exit_quantity else 0
-            selling_p = float(new_item.get("selling_price") or 0.0)
 
             supabase.table("sales_log").insert({
                 "equipment_id": item_id,
                 "quantity_sold": qty_val,
-                "sale_price": selling_p,
+                "sale_price": 0.0,
                 "sold_at": sold_at_val
             }).execute()
 
@@ -298,11 +297,10 @@ def update_inventory_item(id: str, item: EquipmentUpdate):
                 if update_fields:
                     supabase.table("sales_log").update(update_fields).eq("id", latest_sale_id).execute()
             elif (exit_quantity and exit_quantity > 0) or exit_date:
-                selling_p = updated_item.get("selling_price", 0.0)
                 supabase.table("sales_log").insert({
                     "equipment_id": id,
                     "quantity_sold": qty_val,
-                    "sale_price": selling_p,
+                    "sale_price": 0.0,
                     "sold_at": sold_at_val
                 }).execute()
 
@@ -455,7 +453,7 @@ def get_sales_log():
     try:
         # Get all sales with equipment data
         response = supabase.table("sales_log") \
-            .select("*, equipment(id, name, category, cost_price, selling_price, created_at)") \
+            .select("*, equipment(id, name, category, cost_price, created_at)") \
             .order("sold_at", desc=True) \
             .execute()
         

@@ -72,12 +72,11 @@ def test_get_dashboard_metrics_populated():
         data = response.json()
         
         # total_investment = 10 * 100 + 2 * 10 = 1020
-        # potential_revenue = 10 * 150 + 2 * 20 = 1540
-        # potential_profit = 1540 - 1020 = 520
+        # potential_revenue and potential_profit are 0 (selling_price removed)
         # SG Balls has current_stock (2) <= min_stock_threshold (5) -> 1 low stock alert
         assert data["total_investment"] == 1020.0
-        assert data["potential_revenue"] == 1540.0
-        assert data["potential_profit"] == 520.0
+        assert data["potential_revenue"] == 0.0
+        assert data["potential_profit"] == 0.0
         assert data["low_stock_count"] == 1
         assert data["low_stock_alerts"][0]["name"] == "SG Balls"
         assert data["total_unique_items"] == 2

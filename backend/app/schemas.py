@@ -8,12 +8,12 @@ class EquipmentBase(BaseModel):
     current_stock: int = Field(default=0, ge=0, description="Current stock level of the item")
     min_stock_threshold: int = Field(default=5, ge=0, description="Alert threshold for low stock")
     cost_price: float = Field(default=0.0, ge=0.0, description="Unit cost price")
-    selling_price: Optional[float] = Field(default=0.0, ge=0.0, description="Unit selling price")
 
 class EquipmentCreate(EquipmentBase):
-    selling_price: Optional[float] = Field(default=0.0, ge=0.0, description="Unit selling price")
     exit_date: Optional[str] = None
     exit_quantity: Optional[int] = Field(default=0, ge=0)
+    # Keep selling_price optional for backward compat (ignored by backend)
+    selling_price: Optional[float] = Field(default=0.0, ge=0.0)
 
 class EquipmentUpdate(BaseModel):
     name: Optional[str] = None
@@ -21,9 +21,10 @@ class EquipmentUpdate(BaseModel):
     current_stock: Optional[int] = Field(None, ge=0)
     min_stock_threshold: Optional[int] = Field(None, ge=0)
     cost_price: Optional[float] = Field(None, ge=0.0)
-    selling_price: Optional[float] = Field(None, ge=0.0)
     exit_date: Optional[str] = None
     exit_quantity: Optional[int] = Field(None, ge=0)
+    # Keep selling_price optional for backward compat (ignored by backend)
+    selling_price: Optional[float] = Field(None, ge=0.0)
 
 class EquipmentResponse(EquipmentBase):
     id: str

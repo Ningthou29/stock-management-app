@@ -223,7 +223,8 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to add item');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to add item');
       }
 
       if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
@@ -245,8 +246,8 @@ export default function App() {
         exit_quantity: 0
       });
       fetchData();
-    } catch (error) {
-      showNotification('error', 'Error adding inventory item.');
+    } catch (error: any) {
+      showNotification('error', error.message || 'Error adding inventory item.');
     }
   };
 
@@ -269,7 +270,8 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update item');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to update item');
       }
 
       if (categoryToSave && !CATEGORIES.includes(categoryToSave) && !customCategories.includes(categoryToSave)) {
@@ -280,8 +282,8 @@ export default function App() {
       setIsEditModalOpen(false);
       setSelectedItem(null);
       fetchData();
-    } catch (error) {
-      showNotification('error', 'Error updating inventory item.');
+    } catch (error: any) {
+      showNotification('error', error.message || 'Error updating inventory item.');
     }
   };
 
@@ -1752,7 +1754,7 @@ export default function App() {
               <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
                 <p className="text-xs font-bold text-sky-800 uppercase tracking-wider mb-2">Required Column Headers</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {['name', 'category', 'current_stock', 'cost_price', 'selling_price'].map(col => (
+                  {['name', 'category', 'current_stock', 'cost_price'].map(col => (
                     <code key={col} className="text-[11px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-md font-mono font-semibold">{col}</code>
                   ))}
                 </div>
