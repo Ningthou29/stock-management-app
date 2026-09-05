@@ -11,7 +11,9 @@ class EquipmentBase(BaseModel):
     selling_price: float = Field(..., ge=0.0, description="Unit selling price")
 
 class EquipmentCreate(EquipmentBase):
-    pass
+    selling_price: float = Field(default=0.0, ge=0.0, description="Unit selling price")
+    exit_date: Optional[str] = None
+    exit_quantity: Optional[int] = Field(default=0, ge=0)
 
 class EquipmentUpdate(BaseModel):
     name: Optional[str] = None
@@ -20,6 +22,8 @@ class EquipmentUpdate(BaseModel):
     min_stock_threshold: Optional[int] = Field(None, ge=0)
     cost_price: Optional[float] = Field(None, ge=0.0)
     selling_price: Optional[float] = Field(None, ge=0.0)
+    exit_date: Optional[str] = None
+    exit_quantity: Optional[int] = Field(None, ge=0)
 
 class EquipmentResponse(EquipmentBase):
     id: str

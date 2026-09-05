@@ -217,14 +217,32 @@ def export_inventory_excel():
 @app.post("/api/inventory", response_model=EquipmentResponse, status_code=status.HTTP_201_CREATED)
 def add_inventory_item(item: EquipmentCreate):
     try:
-        payload = item.model_dump()
-        response = supabase.table("equipment").insert(payload).execute()
+        data_dict = item.model_dump()
+        exit_date = data_dict.pop("exit_date", None)
+        exit_quantity = data_dict.pop("exit_quantity", None)
+
+        response = supabase.table("equipment").insert(data_dict).execute()
         if not response.data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to create equipment item"
             )
-        return response.data[0]
+        new_item = response.data[0]
+        item_id = new_item["id"]
+
+        if (exit_quantity and exit_quantity > 0) or exit_date:
+            sold_at_val = exit_date if exit_date else datetime.now().isoformat()
+            qty_val = exit_quantity if exit_quantity else 0
+            selling_p = new_item.get("selling_price", 0.0)
+
+            supabase.table("sales_log").insert({
+                "equipment_id": item_id,
+                "quantity_sold": qty_val,
+                "sale_price": selling_p,
+                "sold_at": sold_at_val
+            }).execute()
+
+        return new_item
     except Exception as e:
         logger.error(f"Error adding inventory item: {str(e)}")
         raise HTTPException(
@@ -235,22 +253,52 @@ def add_inventory_item(item: EquipmentCreate):
 @app.put("/api/inventory/{id}", response_model=EquipmentResponse)
 def update_inventory_item(id: str, item: EquipmentUpdate):
     try:
-        # Remove None fields to avoid overwriting existing properties with null
-        payload = {k: v for k, v in item.model_dump().items() if v is not None}
-        if not payload:
-            # Nothing to update, retrieve original
+        data_dict = item.model_dump()
+        exit_date = data_dict.pop("exit_date", None)
+        exit_quantity = data_dict.pop("exit_quantity", None)
+
+        payload = {k: v for k, v in data_dict.items() if v is not None}
+        if payload:
+            response = supabase.table("equipment").update(payload).eq("id", id).execute()
+            if not response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Item not found or failed to update"
+                )
+            updated_item = response.data[0]
+        else:
             response = supabase.table("equipment").select("*").eq("id", id).execute()
             if not response.data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-            return response.data[0]
-            
-        response = supabase.table("equipment").update(payload).eq("id", id).execute()
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Item not found or failed to update"
-            )
-        return response.data[0]
+            updated_item = response.data[0]
+
+        # Handle Exit Date and Exit Quantity sync in sales_log
+        if exit_quantity is not None or exit_date is not None:
+            existing_sales = supabase.table("sales_log").select("*").eq("equipment_id", id).order("sold_at", desc=True).execute()
+            sales_data = existing_sales.data or []
+
+            sold_at_val = exit_date if exit_date else datetime.now().isoformat()
+            qty_val = exit_quantity if exit_quantity is not None else (sales_data[0]["quantity_sold"] if sales_data else 0)
+
+            if sales_data:
+                latest_sale_id = sales_data[0]["id"]
+                update_fields = {}
+                if exit_quantity is not None:
+                    update_fields["quantity_sold"] = qty_val
+                if exit_date:
+                    update_fields["sold_at"] = sold_at_val
+                if update_fields:
+                    supabase.table("sales_log").update(update_fields).eq("id", latest_sale_id).execute()
+            elif (exit_quantity and exit_quantity > 0) or exit_date:
+                selling_p = updated_item.get("selling_price", 0.0)
+                supabase.table("sales_log").insert({
+                    "equipment_id": id,
+                    "quantity_sold": qty_val,
+                    "sale_price": selling_p,
+                    "sold_at": sold_at_val
+                }).execute()
+
+        return updated_item
     except HTTPException as he:
         raise he
     except Exception as e:

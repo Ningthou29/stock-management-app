@@ -25,7 +25,6 @@ import {
   X,
   CheckCircle,
   Database,
-  ArrowUpRight,
   Info,
   FileSpreadsheet,
   Upload,
@@ -154,6 +153,16 @@ export default function App() {
     sale_price: 0
   });
 
+  const [editExitData, setEditExitData] = useState({
+    exit_date: '',
+    exit_quantity: 0
+  });
+
+  const [addExitData, setAddExitData] = useState({
+    exit_date: '',
+    exit_quantity: 0
+  });
+
   // Fetch initial data
   const fetchData = async () => {
     setLoading(true);
@@ -207,7 +216,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          category: categoryToSave
+          category: categoryToSave,
+          exit_date: addExitData.exit_date ? new Date(addExitData.exit_date).toISOString() : undefined,
+          exit_quantity: addExitData.exit_quantity
         })
       });
 
@@ -229,9 +240,13 @@ export default function App() {
         cost_price: 50.0,
         selling_price: 90.0
       });
+      setAddExitData({
+        exit_date: '',
+        exit_quantity: 0
+      });
       fetchData();
     } catch (error) {
-      showNotification('error', 'Error adding item to inventory.');
+      showNotification('error', 'Error adding inventory item.');
     }
   };
 
@@ -247,7 +262,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          category: categoryToSave
+          category: categoryToSave,
+          exit_date: editExitData.exit_date ? new Date(editExitData.exit_date).toISOString() : undefined,
+          exit_quantity: editExitData.exit_quantity
         })
       });
 
@@ -340,6 +357,23 @@ export default function App() {
 
   const openEditModal = (item: Equipment) => {
     setSelectedItem(item);
+
+    const itemSales = salesRecords.filter(s => s.equipment_id === item.id || s.equipment_name === item.name);
+    const totalExitQuantity = itemSales.reduce((acc, s) => acc + s.quantity_sold, 0);
+
+    const sortedSales = itemSales.length > 0
+      ? [...itemSales].sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())
+      : [];
+    const latestSale = sortedSales.length > 0 ? sortedSales[0] : null;
+
+    let exitDateString = '';
+    if (latestSale && latestSale.created_at) {
+      const d = new Date(latestSale.created_at);
+      if (!isNaN(d.getTime())) {
+        exitDateString = d.toISOString().split('T')[0];
+      }
+    }
+
     setFormData({
       name: item.name,
       category: item.category,
@@ -347,6 +381,10 @@ export default function App() {
       min_stock_threshold: item.min_stock_threshold,
       cost_price: item.cost_price,
       selling_price: item.selling_price
+    });
+    setEditExitData({
+      exit_date: exitDateString,
+      exit_quantity: totalExitQuantity
     });
     setIsEditModalOpen(true);
   };
@@ -1378,7 +1416,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Quantity</label>
                   <input
@@ -1403,26 +1441,32 @@ export default function App() {
                     className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
                   />
                 </div>
-
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling Price (₹)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={formData.selling_price}
-                    onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
-                  />
-                </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-2">
-                <ArrowUpRight className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                <span className="text-xs font-semibold text-emerald-800">
-                  Potential profit per unit: ₹{(formData.selling_price - formData.cost_price).toFixed(2)}
-                </span>
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Item Exit Information (Optional)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Item Exit Date</label>
+                    <input
+                      type="date"
+                      value={addExitData.exit_date}
+                      onChange={(e) => setAddExitData({ ...addExitData, exit_date: e.target.value })}
+                      className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Item Exit Quantity</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={addExitData.exit_quantity}
+                      onChange={(e) => setAddExitData({ ...addExitData, exit_quantity: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
@@ -1518,7 +1562,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Quantity</label>
                   <input
@@ -1543,18 +1587,31 @@ export default function App() {
                     className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
                   />
                 </div>
+              </div>
 
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selling Price (₹)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={formData.selling_price}
-                    onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
-                  />
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Item Exit Information</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Item Exit Date</label>
+                    <input
+                      type="date"
+                      value={editExitData.exit_date}
+                      onChange={(e) => setEditExitData({ ...editExitData, exit_date: e.target.value })}
+                      className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Item Exit Quantity</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editExitData.exit_quantity}
+                      onChange={(e) => setEditExitData({ ...editExitData, exit_quantity: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-cricket-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cricket-grass/40"
+                    />
+                  </div>
                 </div>
               </div>
 
