@@ -984,12 +984,12 @@ export default function App() {
                             <tr>
                               <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Item</th>
                               <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Category</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Stock</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Cost</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Sell</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Unit Profit</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden lg:table-cell">Total Profit</th>
-                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider hidden xl:table-cell">Arrived</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Total Quantity</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Cost Per Unit</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Total Cost</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Item Entry Date</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs font-bold uppercase text-slate-500 tracking-wider">Item Exit Date</th>
+                              <th className="px-4 md:px-6 py-3 md:py-4 text-center text-xs font-bold uppercase text-slate-500 tracking-wider">Item Exit Quantity</th>
                               <th className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-bold uppercase text-slate-500 tracking-wider">Actions</th>
                             </tr>
                           </thead>
@@ -997,8 +997,24 @@ export default function App() {
                             {filteredInventory.length > 0 ? (
                               filteredInventory.map(item => {
                                 const isLowStock = item.current_stock <= item.min_stock_threshold;
-                                const profitPerUnit = item.selling_price - item.cost_price;
-                                const totalPotentialProfit = profitPerUnit * item.current_stock;
+                                const totalCost = item.current_stock * item.cost_price;
+
+                                // Filter sales records for this item
+                                const itemSales = salesRecords.filter(s => s.equipment_id === item.id || s.equipment_name === item.name);
+                                const totalExitQuantity = itemSales.reduce((acc, s) => acc + s.quantity_sold, 0);
+
+                                // Get latest sale exit date if available
+                                const sortedSales = itemSales.length > 0
+                                  ? [...itemSales].sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())
+                                  : [];
+                                const latestSale = sortedSales.length > 0 ? sortedSales[0] : null;
+
+                                const exitDateFormatted = latestSale
+                                  ? new Date(latestSale.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                  : 'N/A';
+                                const exitTimeFormatted = latestSale
+                                  ? new Date(latestSale.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                                  : '';
 
                                 return (
                                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
@@ -1025,19 +1041,9 @@ export default function App() {
                                       <span className="text-xs md:text-sm font-semibold text-slate-700">₹{Number(item.cost_price).toFixed(2)}</span>
                                     </td>
                                     <td className="px-4 md:px-6 py-3 md:py-4">
-                                      <span className="text-xs md:text-sm font-semibold text-slate-700">₹{Number(item.selling_price).toFixed(2)}</span>
+                                      <span className="text-xs md:text-sm font-bold text-slate-800">₹{totalCost.toFixed(2)}</span>
                                     </td>
                                     <td className="px-4 md:px-6 py-3 md:py-4">
-                                      <span className={`text-xs md:text-sm font-bold ${profitPerUnit > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                        ₹{profitPerUnit.toFixed(2)}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden lg:table-cell">
-                                      <span className={`text-xs md:text-sm font-black ${totalPotentialProfit > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
-                                        ₹{totalPotentialProfit.toFixed(2)}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 md:px-6 py-3 md:py-4 hidden xl:table-cell">
                                       <div className="flex flex-col">
                                         <span className="text-xs md:text-sm font-semibold text-slate-700">
                                           {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -1046,6 +1052,23 @@ export default function App() {
                                           {new Date(item.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                       </div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4">
+                                      <div className="flex flex-col">
+                                        <span className={`text-xs md:text-sm font-semibold ${latestSale ? 'text-slate-700' : 'text-slate-400 italic'}`}>
+                                          {exitDateFormatted}
+                                        </span>
+                                        {latestSale && (
+                                          <span className="text-[8px] md:text-[10px] text-slate-400 font-medium">
+                                            {exitTimeFormatted}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 md:px-6 py-3 md:py-4 text-center">
+                                      <span className={`text-xs md:text-sm font-extrabold ${totalExitQuantity > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        {totalExitQuantity}
+                                      </span>
                                     </td>
                                     <td className="px-4 md:px-6 py-3 md:py-4 text-right">
                                       <div className="flex justify-end gap-1">

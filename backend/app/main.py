@@ -114,10 +114,13 @@ def get_inventory():
 
 @app.get("/api/inventory/export")
 def export_inventory_excel():
-    """Export the full inventory catalog as a styled .xlsx file."""
+    """Export the full inventory catalog as a styled .xlsx file with updated columns."""
     try:
         response = supabase.table("equipment").select("*").order("name").execute()
         items = response.data or []
+
+        sales_res = supabase.table("sales").select("*").execute()
+        sales = sales_res.data or []
     except Exception as e:
         logger.error(f"Error fetching inventory for export: {str(e)}")
         raise HTTPException(
@@ -141,13 +144,9 @@ def export_inventory_excel():
     center_align  = Alignment(horizontal="center", vertical="center")
     left_align    = Alignment(horizontal="left",   vertical="center")
 
-    headers = [
-        "name", "category", "current_stock",
-        "min_stock_threshold", "cost_price", "selling_price", "created_at"
-    ]
     display_headers = [
-        "Item Name", "Category", "Current Stock",
-        "Min Stock Threshold", "Cost Price (₹)", "Selling Price (₹)", "Date Arrived"
+        "Item", "Category", "Total Quantity",
+        "Cost Per Unit (₹)", "Total Cost (₹)", "Item Entry Date", "Item Exit Date", "Item Exit Quantity"
     ]
 
     # Write header row
@@ -161,16 +160,44 @@ def export_inventory_excel():
     # Write data rows
     for row_num, item in enumerate(items, start=2):
         fill = alt_row_fill if row_num % 2 == 0 else None
-        for col_num, field in enumerate(headers, start=1):
-            value = item.get(field, "")
-            cell  = ws.cell(row=row_num, column=col_num, value=value)
+
+        eq_id = item.get("id")
+        eq_name = item.get("name")
+        item_sales = [s for s in sales if s.get("equipment_id") == eq_id or s.get("equipment_name") == eq_name]
+        total_exit_qty = sum(s.get("quantity_sold", 0) for s in item_sales)
+
+        sorted_sales = sorted(
+            item_sales,
+            key=lambda x: str(x.get("created_at") or x.get("sold_at") or ""),
+            reverse=True
+        )
+        latest_sale = sorted_sales[0] if sorted_sales else None
+        exit_date_str = str(latest_sale.get("created_at") or latest_sale.get("sold_at") or "N/A") if latest_sale else "N/A"
+
+        current_stock = item.get("current_stock", 0)
+        cost_price = float(item.get("cost_price", 0.0))
+        total_cost = current_stock * cost_price
+
+        row_values = [
+            item.get("name", ""),
+            item.get("category", ""),
+            current_stock,
+            cost_price,
+            total_cost,
+            item.get("created_at", ""),
+            exit_date_str,
+            total_exit_qty
+        ]
+
+        for col_num, val in enumerate(row_values, start=1):
+            cell = ws.cell(row=row_num, column=col_num, value=val)
             cell.border    = cell_border
-            cell.alignment = center_align if col_num >= 3 else left_align
+            cell.alignment = center_align if col_num in [3, 6, 7, 8] else (left_align if col_num <= 2 else center_align)
             if fill:
                 cell.fill = fill
 
     # Auto-size columns
-    col_widths = [30, 16, 16, 22, 16, 16, 22]
+    col_widths = [30, 16, 16, 18, 18, 24, 24, 18]
     for idx, width in enumerate(col_widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = width
 

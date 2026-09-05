@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Virtual environments (if you ever create one here)
+# Virtual environments (if you ever create one here
 venv/
 .venv/
 env/
