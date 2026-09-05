@@ -211,11 +211,16 @@ export default function App() {
     try {
       const categoryToSave = formData.category.trim();
 
+      // Calculate adjusted stock
+      const exitQty = addExitData.exit_quantity || 0;
+      const adjustedStock = Math.max(0, formData.current_stock - exitQty);
+
       const response = await fetch(`${API_URL}/inventory`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          current_stock: adjustedStock,  // ← Override with adjusted value
           category: categoryToSave,
           exit_date: addExitData.exit_date ? new Date(addExitData.exit_date).toISOString() : undefined,
           exit_quantity: addExitData.exit_quantity

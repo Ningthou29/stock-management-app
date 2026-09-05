@@ -221,10 +221,11 @@ def add_inventory_item(item: EquipmentCreate):
         exit_date = data_dict.pop("exit_date", None)
         exit_quantity = data_dict.pop("exit_quantity", None)
 
-        # 🆕 SUBTRACT exit_quantity from current_stock
+        # 🔥 NEW: Subtract exit_quantity from current_stock
         if exit_quantity and exit_quantity > 0:
             current_stock = data_dict.get("current_stock", 0)
             data_dict["current_stock"] = max(0, current_stock - exit_quantity)
+            logger.info(f"Adjusted stock: {current_stock} - {exit_quantity} = {data_dict['current_stock']}")
 
         # Remove selling_price from insert payload (not used)
         data_dict.pop("selling_price", None)
@@ -233,6 +234,7 @@ def add_inventory_item(item: EquipmentCreate):
         clean_data = {k: v for k, v in data_dict.items() if v is not None}
 
         response = supabase.table("equipment").insert(clean_data).execute()
+        
         if not response.data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -269,7 +271,14 @@ def update_inventory_item(id: str, item: EquipmentUpdate):
         exit_date = data_dict.pop("exit_date", None)
         exit_quantity = data_dict.pop("exit_quantity", None)
 
+        # 🔥 NEW: Subtract exit_quantity from current_stock if provided
+        if exit_quantity is not None and exit_quantity > 0:
+            current_stock = data_dict.get("current_stock", 0)
+            data_dict["current_stock"] = max(0, current_stock - exit_quantity)
+            logger.info(f"Adjusted stock: {current_stock} - {exit_quantity} = {data_dict['current_stock']}")
+
         payload = {k: v for k, v in data_dict.items() if v is not None}
+        # ... rest of code
         if payload:
             response = supabase.table("equipment").update(payload).eq("id", id).execute()
             if not response.data:
