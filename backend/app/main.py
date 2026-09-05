@@ -221,6 +221,11 @@ def add_inventory_item(item: EquipmentCreate):
         exit_date = data_dict.pop("exit_date", None)
         exit_quantity = data_dict.pop("exit_quantity", None)
 
+        # 🆕 SUBTRACT exit_quantity from current_stock
+        if exit_quantity and exit_quantity > 0:
+            current_stock = data_dict.get("current_stock", 0)
+            data_dict["current_stock"] = max(0, current_stock - exit_quantity)
+
         # Remove selling_price from insert payload (not used)
         data_dict.pop("selling_price", None)
 
