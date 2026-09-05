@@ -5,13 +5,13 @@ from datetime import datetime
 class EquipmentBase(BaseModel):
     name: str
     category: str
-    current_stock: int = Field(..., ge=0, description="Current stock level of the item")
+    current_stock: int = Field(default=0, ge=0, description="Current stock level of the item")
     min_stock_threshold: int = Field(default=5, ge=0, description="Alert threshold for low stock")
-    cost_price: float = Field(..., ge=0.0, description="Unit cost price")
-    selling_price: float = Field(..., ge=0.0, description="Unit selling price")
+    cost_price: float = Field(default=0.0, ge=0.0, description="Unit cost price")
+    selling_price: Optional[float] = Field(default=0.0, ge=0.0, description="Unit selling price")
 
 class EquipmentCreate(EquipmentBase):
-    selling_price: float = Field(default=0.0, ge=0.0, description="Unit selling price")
+    selling_price: Optional[float] = Field(default=0.0, ge=0.0, description="Unit selling price")
     exit_date: Optional[str] = None
     exit_quantity: Optional[int] = Field(default=0, ge=0)
 
@@ -27,7 +27,7 @@ class EquipmentUpdate(BaseModel):
 
 class EquipmentResponse(EquipmentBase):
     id: str
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     model_config = {
         "from_attributes": True

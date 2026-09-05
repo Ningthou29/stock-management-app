@@ -71,17 +71,17 @@ def get_dashboard_metrics():
         response = supabase.table("equipment").select("*").execute()
         items = response.data or []
         
-        total_investment = sum(item["current_stock"] * float(item["cost_price"]) for item in items)
-        potential_revenue = sum(item["current_stock"] * float(item["selling_price"]) for item in items)
+        total_investment = sum((item.get("current_stock") or 0) * float(item.get("cost_price") or 0.0) for item in items)
+        potential_revenue = sum((item.get("current_stock") or 0) * float(item.get("selling_price") or 0.0) for item in items)
         potential_profit = potential_revenue - total_investment
         
         low_stock_alerts = [
             item for item in items 
-            if item["current_stock"] <= item["min_stock_threshold"]
+            if (item.get("current_stock") or 0) <= (item.get("min_stock_threshold") if item.get("min_stock_threshold") is not None else 5)
         ]
         
         total_unique_items = len(items)
-        total_stock_count = sum(item["current_stock"] for item in items)
+        total_stock_count = sum(item.get("current_stock") or 0 for item in items)
         
         return {
             "total_investment": total_investment,
